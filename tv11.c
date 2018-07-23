@@ -77,21 +77,6 @@ busadddev(Bus *bus, Busdev *dev)
 	dev->next = nil;
 }
 
-
-int
-hasinput(int fd)
-{
-	fd_set fds;
-	struct timeval timeout;
-
-	timeout.tv_sec = 0;
-	timeout.tv_usec = 0;
-	FD_ZERO(&fds);
-	FD_SET(fd, &fds);
-	return select(fd+1, &fds, NULL, NULL, &timeout) > 0;
-}
-
-
 int
 dati_bus(Bus *bus)
 {
@@ -1268,6 +1253,8 @@ KD11B cpu;
 Bus bus;
 Memory memdev = { memory, 0, MEMSIZE };
 Busdev membusdev = { nil, &memdev, dati_mem, dato_mem, datob_mem };
+KE11 ke11;
+Busdev kebusdev = { nil, &ke11, dati_ke11, dato_ke11, datob_ke11 };
 
 int
 main()
@@ -1276,19 +1263,20 @@ main()
 	memset(&bus, 0, sizeof(Bus));
 	cpu.bus = &bus;
 	busadddev(&bus, &membusdev);
+	busadddev(&bus, &kebusdev);
 
-//	loadmem("mem.txt");
+	loadmem("mem.txt");
 
 //	if(loadpt("maindec/MAINDEC-11-D0NA-PB.ptap"))
 //	if(loadpt("maindec/MAINDEC-11-D2AA-PB.ptap"))
 //		return 0;
 
-	cpu.r[7] = 0204;
+	cpu.r[7] = 0200;
 //	cpu.sw = 0104000;
 
 	reset(&cpu);
 	cpu.ttyfd = open("/tmp/tty", O_RDWR);
-//	run(&cpu);
+	run(&cpu);
 
 	return 0;
 }

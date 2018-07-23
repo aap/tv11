@@ -19,6 +19,9 @@ typedef uint32_t uint32;
 //#define trace printf
 #define trace(...)
 
+int hasinput(int fd);
+int dial(char *host, int port);
+
 typedef struct Bus Bus;
 typedef struct Busdev Busdev;
 
@@ -47,3 +50,16 @@ struct Memory
 int dati_mem(Bus *bus, void *dev);
 int dato_mem(Bus *bus, void *dev);
 int datob_mem(Bus *bus, void *dev);
+
+typedef struct KE11 KE11;
+struct KE11
+{
+	word ac;
+	word mq;
+	word x;
+	byte sc;
+	byte sr;
+};
+int dati_ke11(Bus *bus, void *dev);
+int dato_ke11(Bus *bus, void *dev);
+int datob_ke11(Bus *bus, void *dev);
