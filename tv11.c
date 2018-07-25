@@ -1,5 +1,7 @@
 #include "tv11.h"
 
+int tenfd;
+
 // 11/05 cpu
 typedef struct KD11B KD11B;
 struct KD11B
@@ -107,6 +109,7 @@ datob_bus(Bus *bus)
 	return 1;
 }
 
+void reset_null(void *dev) { (void)dev; }
 
 
 void
@@ -125,6 +128,12 @@ printstate(KD11B *cpu)
 }
 
 word
+sgn(word w)
+{
+	return (w>>15)&1;
+}
+
+word
 sxt(byte b)
 {
 	return (word)(int8_t)b;
@@ -139,6 +148,8 @@ ubxt(word a)
 void
 reset(KD11B *cpu)
 {
+	Busdev *bd;
+
 	cpu->rcd_busy = 0;
 	cpu->rcd_rdr_enab = 0;
 	cpu->rcd_int_enab = 0;
@@ -158,6 +169,9 @@ reset(KD11B *cpu)
 	cpu->lc_int = 0;
 
 	cpu->traps = 0;
+
+	for(bd = cpu->bus->devs; bd; bd = bd->next)
+		bd->reset(bd->dev);
 }
 
 int
@@ -489,12 +503,6 @@ setnz(KD11B *cpu, word w)
 	cpu->psw &= ~(PSW_N|PSW_Z);
 	if(w & 0100000) cpu->psw |= PSW_N;
 	if(w == 0) cpu->psw |= PSW_Z;
-}
-
-word
-sgn(word w)
-{
-	return (w>>15)&1;
 }
 
 void
@@ -1092,6 +1100,61 @@ handleclock(KD11B *cpu)
 }
 
 void
+handleten(KD11B *cpu)
+{
+	uint8 buf[6], len;
+	int n;
+	uint32 a;
+	word d;
+
+	memset(buf, 0, sizeof(buf));
+	if(!hasinput(tenfd))
+		return;
+	n = read(tenfd, &len, 1);
+	if(n != 1){
+		printf("fd closed, exiting\n");
+		exit(0);
+	}
+	read(tenfd, buf, len);
+
+	a = buf[1] | buf[2]<<8 | buf[3]<<16;
+	d = buf[4] | buf[5]<<8;
+
+	switch(buf[0]){
+	case 1:		/* write */
+		cpu->bus->addr = a;
+		cpu->bus->data = d;
+		if(a&1) goto be;
+		if(dato_bus(cpu->bus)) goto be;
+fprintf(stderr, "TEN11 write: %06o %06o\n", cpu->bus->addr, cpu->bus->data);
+		buf[0] = 1;
+		buf[1] = 3;
+		write(tenfd, buf, 2);
+		break;
+	case 2:		/* read */
+		cpu->bus->addr = a;
+		if(a&1) goto be;
+		if(dati_bus(cpu->bus)) goto be;
+fprintf(stderr, "TEN11 read: %06o %06o\n", cpu->bus->addr, cpu->bus->data);
+		buf[0] = 3;
+		buf[1] = 3;
+		buf[2] = cpu->bus->data;
+		buf[3] = cpu->bus->data>>8;
+		write(tenfd, buf, 4);
+		break;
+	default:
+		fprintf(stderr, "unknown ten11 message type %d\n", buf[0]);
+		break;
+	}
+	return;
+be:
+fprintf(stderr, "TEN11 bus error %06o\n", cpu->bus->addr);
+	buf[0] = 1;
+	buf[1] = 4;
+	write(tenfd, buf, 2);
+}
+
+void
 run(KD11B *cpu)
 {
 	int n;
@@ -1117,6 +1180,8 @@ run(KD11B *cpu)
 			cpu->waiting = 0;
 			step(cpu);
 		}
+
+		handleten(cpu);
 
 		// Don't handle IO all the time
 		n++;
@@ -1252,9 +1317,21 @@ dumpmem(word start, word end)
 KD11B cpu;
 Bus bus;
 Memory memdev = { memory, 0, MEMSIZE };
-Busdev membusdev = { nil, &memdev, dati_mem, dato_mem, datob_mem };
+Busdev membusdev = { nil, &memdev, dati_mem, dato_mem, datob_mem, reset_null };
 KE11 ke11;
-Busdev kebusdev = { nil, &ke11, dati_ke11, dato_ke11, datob_ke11 };
+Busdev kebusdev = { nil, &ke11, dati_ke11, dato_ke11, datob_ke11, reset_ke11 };
+TV tv;
+Busdev tvbusdev = { nil, &tv, dati_tv, dato_tv, datob_tv, reset_tv };
+
+void
+setunibus(uint8 n)
+{
+	uint8 buf[3];
+	buf[0] = 2;
+	buf[1] = 0;
+	buf[2] = n;
+	write(tenfd, buf, 3);
+}
 
 int
 main()
@@ -1263,7 +1340,17 @@ main()
 	memset(&bus, 0, sizeof(Bus));
 	cpu.bus = &bus;
 	busadddev(&bus, &membusdev);
+	busadddev(&bus, &tvbusdev);
 	busadddev(&bus, &kebusdev);
+
+/*
+	tenfd = dial("localhost", 10110);
+	if(tenfd < 0){
+		printf("can't connect\n");
+		return 1;
+	}
+//	setunibus(0);
+*/
 
 	loadmem("mem.txt");
 
@@ -1276,7 +1363,23 @@ main()
 
 	reset(&cpu);
 	cpu.ttyfd = open("/tmp/tty", O_RDWR);
-	run(&cpu);
+
+	bus.addr = 0764060;
+	bus.data = WD(0, 010);
+	dato_bus(&bus);
+	bus.data = WD(040, 03);
+	dato_bus(&bus);
+	void vswinfo(TV*);
+	vswinfo(&tv);
+
+	serve(10000, srvtv, &tv);
+
+//	cpu.r[7] = 0;
+//	memory[0] = 0777;
+//	run(&cpu);
+
+//	void eaetest(KE11 *ke);
+//	eaetest(&ke11);
 
 	return 0;
 }

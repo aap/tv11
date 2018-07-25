@@ -16,11 +16,18 @@ typedef uint32_t uint32;
 #define W(w) ((word)(w))
 #define nil NULL
 
+#define SETMASK(l, r, m) l = ((l)&~(m) | (r)&(m))
+
+
 //#define trace printf
 #define trace(...)
 
 int hasinput(int fd);
 int dial(char *host, int port);
+void serve(int port, void (*handlecon)(int, void*), void *arg);
+
+word sgn(word w);
+word sxt(byte b);
 
 typedef struct Bus Bus;
 typedef struct Busdev Busdev;
@@ -32,7 +39,9 @@ struct Busdev
 	int (*dati)(Bus *bus, void *dev);
 	int (*dato)(Bus *bus, void *dev);
 	int (*datob)(Bus *bus, void *dev);
+	void (*reset)(void *dev);
 };
+void reset_null(void *dev);
 
 struct Bus
 {
@@ -57,9 +66,46 @@ struct KE11
 	word ac;
 	word mq;
 	word x;
-	byte sc;
+	byte sc;	/* 6 bits */
 	byte sr;
 };
 int dati_ke11(Bus *bus, void *dev);
 int dato_ke11(Bus *bus, void *dev);
 int datob_ke11(Bus *bus, void *dev);
+void reset_ke11(void *dev);
+
+
+enum {
+	NUMFBUFFERS = 16
+};
+
+typedef struct FBuffer FBuffer;
+struct FBuffer
+{
+	word fb[16*1024 - 1];
+	word csa;
+};
+
+/* The whole TV system */
+typedef struct TV TV;
+struct TV
+{
+	FBuffer buffers[NUMFBUFFERS];	/* 256 is the theoretical maximum */
+	FBuffer *curbuf;
+	word creg;
+	
+	/* Two sections.
+	 * Each has 32 outputs that can have one of 16 inputs.
+	 * Input 0 is null on both,
+	 * that leaves 30 different actual inputs in total. */
+	uint8 vswsect[2][32];
+
+	word kms;
+	word kma;
+};
+void inittv(TV *tv);
+int dato_tv(Bus *bus, void *dev);
+int datob_tv(Bus *bus, void *dev);
+int dati_tv(Bus *bus, void *dev);
+void reset_tv(void *dev);
+void srvtv(int fd, void *arg);

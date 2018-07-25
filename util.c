@@ -23,21 +23,49 @@ int
 dial(char *host, int port)
 {
 	int sockfd;
-	struct sockaddr_in serv_addr;
+	struct sockaddr_in server;
 
 	sockfd = socket(AF_INET, SOCK_STREAM, 0);
 	if(sockfd < 0){
 		perror("error: socket");
 		return -1;
 	}
-	memset(&serv_addr, 0, sizeof(serv_addr));
-	serv_addr.sin_family = AF_INET;
-	inet_pton(AF_INET, host, &serv_addr.sin_addr);
-	serv_addr.sin_port = htons(port);
-
-	if(connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0){
+	memset(&server, 0, sizeof(server));
+	server.sin_family = AF_INET;
+	inet_pton(AF_INET, host, &server.sin_addr);
+	server.sin_port = htons(port);
+	if(connect(sockfd, (struct sockaddr*)&server, sizeof(server)) < 0){
 		perror("error: connect");
 		return -1;
 	}
 	return sockfd;
+}
+
+void
+serve(int port, void (*handlecon)(int, void*), void *arg)
+{
+	int sockfd, confd;
+	socklen_t len;
+	struct sockaddr_in server, client;
+
+	sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if(sockfd < 0){
+		perror("error: socket");
+		return;
+	}
+	memset(&server, 0, sizeof(server));
+	server.sin_family = AF_INET;
+	server.sin_addr.s_addr = INADDR_ANY;
+	server.sin_port = htons(port);
+	if(bind(sockfd, (struct sockaddr*)&server, sizeof(server)) < 0){
+		perror("error: bind");
+		return;
+	}
+	listen(sockfd, 5);
+	len = sizeof(client);
+	while(confd = accept(sockfd, (struct sockaddr*)&client, &len),
+	      confd >= 0)
+		handlecon(confd, arg);
+	perror("error: accept");
+	return;
 }
