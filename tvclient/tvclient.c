@@ -306,6 +306,17 @@ printf("buf size: %d\n", w*h*2);
 	unpackfb(largebuf, x*16, y, w*16, h);
 }
 
+void
+getdpykbd(void)
+{
+	uint8 buf[2];
+	if(read(fd, buf, 2) != 2){
+		fprintf(stderr, "protocol botch\n");
+		return;
+	}
+	printf("%o %o\n", buf[0], buf[1]);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -327,6 +338,7 @@ main(int argc, char *argv[])
 	for(i = 0; i < WIDTH*HEIGHT; i++)
 		fb[i] = bg;
 
+	getdpykbd();
 	getfb();
 
 	running = 1;

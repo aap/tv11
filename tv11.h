@@ -25,6 +25,7 @@ typedef uint32_t uint32;
 int hasinput(int fd);
 int dial(char *host, int port);
 void serve(int port, void (*handlecon)(int, void*), void *arg);
+void nodelay(int fd);
 
 word sgn(word w);
 word sxt(byte b);
@@ -76,7 +77,17 @@ void reset_ke11(void *dev);
 
 
 enum {
-	NUMFBUFFERS = 16
+	NUMFBUFFERS = 16,
+	NUMCONNECTIONS = 32,
+};
+
+/* A remove TV connection */
+typedef struct TVcon TVcon;
+struct TVcon
+{
+	int fd;
+	int dpy;
+	int kbd;
 };
 
 typedef struct FBuffer FBuffer;
@@ -84,6 +95,7 @@ struct FBuffer
 {
 	word fb[16*1024 - 1];
 	word csa;
+	word mask;	/* 0 or ~0 for bw flip */
 };
 
 /* The whole TV system */
@@ -102,10 +114,12 @@ struct TV
 
 	word kms;
 	word kma;
+
+	TVcon cons[NUMCONNECTIONS];
 };
-void inittv(TV *tv);
 int dato_tv(Bus *bus, void *dev);
 int datob_tv(Bus *bus, void *dev);
 int dati_tv(Bus *bus, void *dev);
 void reset_tv(void *dev);
-void srvtv(int fd, void *arg);
+void handletvs(TV *tv);
+void accepttv(int fd, void *arg);

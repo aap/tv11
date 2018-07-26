@@ -1112,7 +1112,11 @@ handleten(KD11B *cpu)
 		return;
 	n = read(tenfd, &len, 1);
 	if(n != 1){
-		printf("fd closed, exiting\n");
+		fprintf(stderr, "fd closed, exiting\n");
+		exit(0);
+	}
+	if(len > 6){
+		fprintf(stderr, "unibus botch, exiting\n");
 		exit(0);
 	}
 	read(tenfd, buf, len);
@@ -1326,11 +1330,25 @@ Busdev tvbusdev = { nil, &tv, dati_tv, dato_tv, datob_tv, reset_tv };
 void
 setunibus(uint8 n)
 {
+	uint8 len;
 	uint8 buf[3];
 	buf[0] = 2;
 	buf[1] = 0;
 	buf[2] = n;
 	write(tenfd, buf, 3);
+
+	if(read(tenfd, &len, 1) != 1) goto err;
+	if(len != 1) goto err;
+	if(read(tenfd, buf, len) != len) goto err;
+	if(buf[0] != 3){
+		fprintf(stderr, "couldn't attach as unibus %d, exiting\n", n);
+		exit(0);
+	}
+	printf("unibus %d OK\n", n);
+	return;
+err:
+	fprintf(stderr, "unibus protocol botch, exiting\n");
+	exit(0);
 }
 
 int
@@ -1344,12 +1362,15 @@ main()
 	busadddev(&bus, &kebusdev);
 
 /*
-	tenfd = dial("localhost", 10110);
+//	tenfd = dial("localhost", 10110);
+//	tenfd = dial("its.pdp10.se", 1234);
+	tenfd = dial("88.99.191.74", 1234);
 	if(tenfd < 0){
 		printf("can't connect\n");
 		return 1;
 	}
-//	setunibus(0);
+	nodelay(tenfd);
+	setunibus(0);
 */
 
 	loadmem("mem.txt");
@@ -1361,22 +1382,26 @@ main()
 	cpu.r[7] = 0200;
 //	cpu.sw = 0104000;
 
+	inittv(&tv);
+
 	reset(&cpu);
 	cpu.ttyfd = open("/tmp/tty", O_RDWR);
+	printf("tty connected to %d\n", cpu.ttyfd);
 
 	bus.addr = 0764060;
-	bus.data = WD(0, 010);
+	bus.data = WD(0 | 0, 010);
 	dato_bus(&bus);
-	bus.data = WD(040, 03);
-	dato_bus(&bus);
-	void vswinfo(TV*);
-	vswinfo(&tv);
+//	bus.data = WD(040, 03);
+//	dato_bus(&bus);
+//	void vswinfo(TV*);
+//	vswinfo(&tv);
 
-	serve(10000, srvtv, &tv);
+	handletvs(&tv);
+	serve(10000, accepttv, &tv);
 
-//	cpu.r[7] = 0;
-//	memory[0] = 0777;
-//	run(&cpu);
+	cpu.r[7] = 0;
+	memory[0] = 0777;
+	run(&cpu);
 
 //	void eaetest(KE11 *ke);
 //	eaetest(&ke11);

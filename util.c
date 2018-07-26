@@ -4,6 +4,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 
 int
@@ -68,4 +69,11 @@ serve(int port, void (*handlecon)(int, void*), void *arg)
 		handlecon(confd, arg);
 	perror("error: accept");
 	return;
+}
+
+void
+nodelay(int fd)
+{
+	int flag = 1;
+	setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
 }
