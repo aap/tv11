@@ -1185,7 +1185,8 @@ run(KD11B *cpu)
 			step(cpu);
 		}
 
-		handleten(cpu);
+		if(tenfd >= 0)
+			handleten(cpu);
 
 		// Don't handle IO all the time
 		n++;
@@ -1361,17 +1362,18 @@ main()
 	busadddev(&bus, &tvbusdev);
 	busadddev(&bus, &kebusdev);
 
-/*
-//	tenfd = dial("localhost", 10110);
+
+//	tenfd = dial("10.24.4.1", 1234);
+	tenfd = dial("localhost", 1234);
 //	tenfd = dial("its.pdp10.se", 1234);
-	tenfd = dial("88.99.191.74", 1234);
+//	tenfd = dial("88.99.191.74", 1234);
 	if(tenfd < 0){
-		printf("can't connect\n");
-		return 1;
+		printf("can't connect to PDP-10\n");
+//		return 1;
+	}else{
+		nodelay(tenfd);
+		setunibus(0);
 	}
-	nodelay(tenfd);
-	setunibus(0);
-*/
 
 	loadmem("mem.txt");
 
@@ -1389,15 +1391,19 @@ main()
 	printf("tty connected to %d\n", cpu.ttyfd);
 
 	bus.addr = 0764060;
-	bus.data = WD(0 | 0, 010);
+	bus.data = WD(0 | 0, 1);
 	dato_bus(&bus);
-//	bus.data = WD(040, 03);
-//	dato_bus(&bus);
-//	void vswinfo(TV*);
-//	vswinfo(&tv);
+	bus.data = WD(0 | 1, 2);
+	dato_bus(&bus);
+	bus.data = WD(0 | 2, 3);
+	dato_bus(&bus);
+	bus.data = WD(0 | 3, 4);
+	dato_bus(&bus);
+	void vswinfo(TV*);
+	vswinfo(&tv);
 
 	handletvs(&tv);
-	serve(10000, accepttv, &tv);
+	servetv(&tv, 10000);
 
 	cpu.r[7] = 0;
 	memory[0] = 0777;

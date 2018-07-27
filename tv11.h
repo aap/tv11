@@ -76,17 +76,21 @@ int datob_ke11(Bus *bus, void *dev);
 void reset_ke11(void *dev);
 
 
+/* Some of these numbers are also hardcoded! */
 enum {
 	NUMFBUFFERS = 16,
 	NUMCONNECTIONS = 32,
+	NUMOUTPUTS = 32,
+	NUMINPUTS = 16,
+	NUMSECTIONS = 2,
 };
 
-/* A remove TV connection */
+/* A remote TV connection */
 typedef struct TVcon TVcon;
 struct TVcon
 {
 	int fd;
-	int dpy;
+	int dpy;	/* output number */
 	int kbd;
 };
 
@@ -96,6 +100,11 @@ struct FBuffer
 	word fb[16*1024 - 1];
 	word csa;
 	word mask;	/* 0 or ~0 for bw flip */
+
+	/* list of all outputs that are driven
+	 * by this buffer. */
+	int osw[NUMOUTPUTS];
+	int nosw;
 };
 
 /* The whole TV system */
@@ -110,16 +119,19 @@ struct TV
 	 * Each has 32 outputs that can have one of 16 inputs.
 	 * Input 0 is null on both,
 	 * that leaves 30 different actual inputs in total. */
-	uint8 vswsect[2][32];
+	uint8 vswsect[NUMSECTIONS][NUMOUTPUTS];
 
 	word kms;
 	word kma;
 
 	TVcon cons[NUMCONNECTIONS];
+	int omap[NUMOUTPUTS];	/* map of outputs to connections */
 };
+void inittv(TV *tv);
 int dato_tv(Bus *bus, void *dev);
 int datob_tv(Bus *bus, void *dev);
 int dati_tv(Bus *bus, void *dev);
 void reset_tv(void *dev);
 void handletvs(TV *tv);
 void accepttv(int fd, void *arg);
+void servetv(TV *tv, int port);

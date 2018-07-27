@@ -39,25 +39,29 @@ enum {
 };
 
 static pthread_mutex_t lock;
+#define GUARD	pthread_mutex_lock(&lock)
+#define UNGUARD	pthread_mutex_unlock(&lock)
 
 static word nullfb[16*1024 - 1];
 
 /* map from input switch to buffer number
  * This is the config at tech square that the TV program expects */
-static int dpymap[32] = {
+static int dpymap[NUMSECTIONS][NUMINPUTS] = {
 	/* first section */
-	-1,	/* null input */
-	0, 1, 2, 3, 4, 5, 6, 7, 014, 015, 016, 017, -1, -1, -1,
+	{ -1,	/* null input */
+	  0, 1, 2, 3, 4, 5, 6,
+	  7, 014, 015, 016, 017, -1, -1, -1 },
 	/* first section */
-	-1,	/* null input */
-	010, 011, 012, 013, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1
+	{ -1,	/* null input */
+	  010, 011, 012, 013, -1, -1, -1,
+	  -1, -1, -1, -1, -1, -1, -1, -1 }
 };
 
 /* List of video switch output and a keyboard */
 static struct {
 	int dpy;
 	int kbd;
-} dpykbdlist[32] = {
+} dpykbdlist[NUMOUTPUTS] = {
 	{ 0,	0, },	// 809 FAHLMAN, HOLLOWAY, KNIGHT
 	{ 01,	014 },	// 820 MINSKY
 	{ 02,	021 },	// 824 RICH, DEKLEER
@@ -92,12 +96,28 @@ static struct {
 	{ 037,	041 },	// 3rd Floor #1
 };
 
+void sendupdate(TV *tv, uint16 addr);
+
 void
 vswinfo(TV *tv)
 {
 	int i;
-	for(i = 0; i < 32; i++)
+	for(i = 0; i < NUMOUTPUTS; i++)
 		printf("%o|%o -> %o\n", tv->vswsect[0][i], tv->vswsect[1][i], i);
+}
+
+static void
+updatevsw(TV *tv)
+{
+	int i, j, n;
+	for(i = 0; i < NUMFBUFFERS; i++){
+		n = 0;
+		for(j = 0; j < NUMOUTPUTS; j++)
+			if(dpymap[0][tv->vswsect[0][j]] == i ||
+			   dpymap[1][tv->vswsect[1][j]] == i)
+				tv->buffers[i].osw[n++] = j;
+		tv->buffers[i].nosw = n;
+	}
 }
 
 int
@@ -137,6 +157,7 @@ dato_tv(Bus *bus, void *dev)
 			case ALU_SET:	w = d; break;
 			}
 			tv->curbuf->fb[waddr] = w;
+			sendupdate(tv, waddr);
 		}
 		return 0;
 	}
@@ -163,6 +184,7 @@ dato_tv(Bus *bus, void *dev)
 		s = d>>13 & 07;
 		if(s < 2)
 			tv->vswsect[s][o] = i;
+		updatevsw(tv);
 		}
 		return 0;
 	case ASW:
@@ -210,6 +232,7 @@ datob_tv(Bus *bus, void *dev)
 			case ALU_SET:	w = d; break;
 			}
 			SETMASK(tv->curbuf->fb[waddr], w, m);
+			sendupdate(tv, waddr);
 		}
 		return 0;
 	}
@@ -283,6 +306,8 @@ reset_tv(void *dev)
 	tv->kms = 0;
 	tv->kma = 0;
 
+	updatevsw(tv);
+
 	int i, j;
 	for(i = 0; i < NUMFBUFFERS; i++)
 		for(j = 0; j < 576*454/16; j++)
@@ -293,11 +318,14 @@ void
 inittv(TV *tv)
 {
 	TVcon *con;
+	int i;
 	for(con = tv->cons; con < &tv->cons[NUMCONNECTIONS]; con++){
 		con->fd = -1;
 		con->dpy = -1;
 		con->kbd = -1;
 	}
+	for(i = 0; i < NUMOUTPUTS; i++)
+		tv->omap[i] = -1;
 	pthread_mutex_init(&lock, nil);
 }
 
@@ -306,12 +334,14 @@ inittv(TV *tv)
  */
 
 enum {
+	/* TV to 11 */
 	MSG_KEYDN = 0,
 	MSG_GETFB,
-};
 
-#define GUARD	pthread_mutex_lock(&lock)
-#define UNGUARD	pthread_mutex_unlock(&lock)
+	/* 11 to TV */
+	MSG_FB,
+	MSG_WD,
+};
 
 word
 b2w(uint8 *b)
@@ -326,7 +356,14 @@ w2b(uint8 *b, word w)
 	b[1] = w>>8;
 }
 
-uint8 largebuf[16*1024*2];
+void
+msgheader(uint8 *b, uint8 type, uint16 length)
+{
+	w2b(b, length);
+	b[2] = type;
+}
+
+uint8 largebuf[64*1024];
 
 void
 dumpbuf(uint8 *b, int n)
@@ -337,23 +374,21 @@ dumpbuf(uint8 *b, int n)
 }
 
 static void
-packfb(TV *tv, int osw, int x, int y, int w, int h)
+packfb(TV *tv, uint8 *dst, int osw, int x, int y, int w, int h)
 {
 	int stride;
-	uint8 *dst;
 	int n1, n2;
 	word *src1, *src2;
 	word bw1, bw2;
 
 	stride = 576/16;
-	dst = largebuf;
 
 	/* We mix the outputs of both sections for the final output.
 	 * This feature does not seem to be used by the TV system
 	 * but it's theoretically capable of doing something like this.
 	 * External video input is not supported here of course. */
-	n1 = dpymap[tv->vswsect[0][osw]];
-	n2 = dpymap[tv->vswsect[1][osw]];
+	n1 = dpymap[0][tv->vswsect[0][osw]];
+	n2 = dpymap[1][tv->vswsect[1][osw]];
 printf("inbuf: %d %d\n", n1, n2);
 	src1 = n1 < 0 ? nullfb : &tv->buffers[n1].fb[stride*y + x];
 	src2 = n2 < 0 ? nullfb : &tv->buffers[n2].fb[stride*y + x];
@@ -367,6 +402,36 @@ printf("inbuf: %d %d\n", n1, n2);
 		}
 		src1 += stride;
 		src2 += stride;
+	}
+}
+
+/* Send a single word update to all displays */
+void
+sendupdate(TV *tv, uint16 addr)
+{
+	uint8 buf[7];
+	int i;
+	int osw;
+	int n1, n2;
+	word w1, w2;
+	word bw1, bw2;
+
+	msgheader(buf, MSG_WD, 5);
+	w2b(buf+3, addr);
+
+	/* Again do the mixing thing for no reason */
+	for(i = 0; i < tv->curbuf->nosw; i++){
+		osw = tv->curbuf->osw[i];
+		if(osw < 0)
+			continue;
+		n1 = dpymap[0][tv->vswsect[0][osw]];
+		n2 = dpymap[1][tv->vswsect[1][osw]];
+		w1 = n1 < 0 ? 0 : tv->buffers[n1].fb[addr];
+		w2 = n2 < 0 ? 0 : tv->buffers[n2].fb[addr];
+		bw1 = n1 < 0 ? 0 : tv->buffers[n1].mask;
+		bw2 = n2 < 0 ? 0 : tv->buffers[n2].mask;
+		w2b(buf+5, w1^bw1 | w2^bw2);
+		write(tv->cons[tv->omap[osw]].fd, buf, 7);
 	}
 }
 
@@ -392,11 +457,12 @@ alloccon(TV *tv)
 	return -1;
 }
 
-/* NB: this could be GUARDed by the caller */
+/* NB: this should be GUARDed by the caller */
 static void
-closecon(TVcon *con)
+closecon(TV *tv, TVcon *con)
 {
 	printf("disconnect display %o\n", con->dpy);
+	tv->omap[con->dpy] = -1;
 	close(con->fd);
 	con->fd = -1;
 	con->dpy = -1;
@@ -422,46 +488,60 @@ accepttv(int fd, void *arg)
 	con->dpy = dpykbdlist[c].dpy;
 	con->kbd = dpykbdlist[c].kbd;
 	con->fd = fd;
+	tv->omap[con->dpy] = c;
 	UNGUARD;
 	setdpykbd(con->fd, con->dpy, con->kbd);
 	printf("connected display %o\n", con->dpy);
 }
 
+/* This is executed within GUARDs */
 static void
 handlemsg(TV *tv, TVcon *con)
 {
-	uint8 len;
-	uint8 buf[100];
-	word w;
-	int x, y, width, height;
+	uint16 len;
+	uint8 *b;
+	uint8 type;
+	int x, y, w, h;
 
-	if(read(con->fd, &len, 1) != 1){
-		closecon(con);
+	if(read(con->fd, &len, 2) != 2){
+err:
+		closecon(tv, con);
 		return;
 	}
-	assert(len <= 100);
+	len = b2w((uint8*)&len);
 
-	read(con->fd, buf, len);
-	switch(buf[0]){
+	b = largebuf;
+	if(read(con->fd, b, len) != len)
+		goto err;
+	type = *b++;
+	switch(type){
 	case MSG_KEYDN:
-		w = WD(buf[2], buf[1]);
-		printf("key: %o %o\n", con->kbd, w);
+		printf("key: %o %o\n", con->kbd, b2w(b));
 		break;
 
 	case MSG_GETFB:
-		x = b2w(buf+1);
-		y = b2w(buf+3);
-		width = b2w(buf+5);
-		height = b2w(buf+7);
+		x = b2w(b);
+		y = b2w(b+2);
+		w = b2w(b+4);
+		h = b2w(b+6);
+		printf("getfb: %d %d %d %d\n", x, y, w, h);
 
 		x /= 16;
-		width = (width+15) / 16;
-		packfb(tv, con->dpy, x, y, width, height);
-		write(con->fd, largebuf, width*height*2);
+		w = (w+15) / 16;
+		b = largebuf;
+		msgheader(b, MSG_FB, 1+8+w*h*2);
+		b += 3;
+		w2b(b, x);
+		w2b(b+2, y);
+		w2b(b+4, w);
+		w2b(b+6, h);
+		b += 8;
+		packfb(tv, b, con->dpy, x, y, w, h);
+		write(con->fd, largebuf, 3+8+w*h*2);
 		break;
 
 	default:
-		fprintf(stderr, "unknown msg type %d\n", buf[0]);
+		fprintf(stderr, "unknown msg type %d\n", type);
 	}
 	
 }
@@ -510,7 +590,7 @@ handletv_thread(void *arg)
 			if(fds[i].revents != POLLIN){
 				/* When does this happen? */
 				GUARD;
-				closecon(con);
+				closecon(tv, con);
 				UNGUARD;
 				continue;
 			}
@@ -534,4 +614,29 @@ handletvs(TV *tv)
 {
 	pthread_t th;
 	pthread_create(&th, nil, handletv_thread, tv);
+}
+
+struct Serveargs {
+	TV *tv;
+	int port;
+};
+
+static void*
+servetv_thread(void *arg)
+{
+	struct Serveargs *sa = arg;
+	serve(sa->port, accepttv, sa->tv);
+	free(sa);
+	return nil;
+}
+
+void
+servetv(TV *tv, int port)
+{
+	pthread_t th;
+	struct Serveargs *sa;
+	sa = malloc(sizeof(struct Serveargs));
+	sa->tv = tv;
+	sa->port = port;
+	pthread_create(&th, nil, servetv_thread, sa);
 }

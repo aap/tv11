@@ -31,9 +31,17 @@ uint32 fg = 0x00FF0000;
 uint32 bg = 0x00000000;
 int fd;
 
+uint8 largebuf[64*1024];
+
+
 enum {
+	/* TV to 11 */
 	MSG_KEYDN = 0,
 	MSG_GETFB,
+
+	/* 11 to TV */
+	MSG_FB,
+	MSG_WD,
 };
 
 void
@@ -60,6 +68,13 @@ w2b(uint8 *b, uint16 w)
 {
 	b[0] = w;
 	b[1] = w>>8;
+}
+
+void
+msgheader(uint8 *b, uint8 type, uint16 length)
+{
+	w2b(b, length);
+	b[2] = type;
 }
 
 int
@@ -211,12 +226,11 @@ keydown(SDL_Keysym keysym)
 		return;
 
 	key |= curmod;
-printf("%o\n", key);
-	uint8 buf[4];
-	buf[0] = 3;
-	buf[1] = MSG_KEYDN;
-	w2b(buf+2, key);
-	write(fd, buf, 4);
+
+	msgheader(largebuf, MSG_KEYDN, 3);
+	w2b(largebuf+3, key);
+	write(fd, largebuf, 5);
+
 //	printf("down: %d %o %o\n", keysym.scancode, key, curmod);
 }
 
@@ -241,8 +255,6 @@ void
 winevent(SDL_WindowEvent ev)
 {
 }
-
-uint8 largebuf[16*1024*2];
 
 void
 dumpbuf(uint8 *b, int n)
@@ -272,13 +284,24 @@ unpackfb(uint8 *src, int x, int y, int w, int h)
 		dst += WIDTH;
 	}
 	printf("update: %d %d %d %d\n", x, y, w, h);
-	draw();
+}
+
+void
+getupdate(uint16 addr, uint16 wd)
+{
+	int j;
+	uint32 *dst;
+	dst = &fb[addr*16];
+	for(j = 0; j < 16; j++){
+		dst[j] = wd&0100000 ? fg : bg;
+		wd <<= 1;
+	}
 }
 
 void
 getfb(void)
 {
-	uint8 buf[10];
+	uint8 *b;
 	int x, y, w, h;
 
 	x = 0;
@@ -286,24 +309,14 @@ getfb(void)
 	w = WIDTH;
 	h = HEIGHT;
 
-/*	x = WIDTH/2;
-	y = HEIGHT/2;
-	w = WIDTH/2;
-	h = HEIGHT/2;
-*/
-	buf[0] = 9;
-	buf[1] = MSG_GETFB;
-	w2b(buf+2, x);
-	w2b(buf+4, y);
-	w2b(buf+6, w);
-	w2b(buf+8, h);
-	write(fd, buf, 10);
-
-	x /= 16;
-	w = (w+15) / 16;
-printf("buf size: %d\n", w*h*2);
-	read(fd, largebuf, w*h*2);
-	unpackfb(largebuf, x*16, y, w*16, h);
+	b = largebuf;
+	msgheader(b, MSG_GETFB, 9);
+	b += 3;
+	w2b(b, x);
+	w2b(b+2, y);
+	w2b(b+4, w);
+	w2b(b+6, h);
+	write(fd, largebuf, 11);
 }
 
 void
@@ -317,9 +330,46 @@ getdpykbd(void)
 	printf("%o %o\n", buf[0], buf[1]);
 }
 
+void*
+readthread(void *arg)
+{
+	uint16 len;
+	uint8 *b;
+	uint8 type;
+	int x, y, w, h;
+
+	while(read(fd, &len, 2) == 2){
+		len = b2w((uint8*)&len);
+		b = largebuf;
+		read(fd, b, len);
+		type = *b++;
+		switch(type){
+		case MSG_FB:
+			x = b2w(b);
+			y = b2w(b+2);
+			w = b2w(b+4);
+			h = b2w(b+6);
+			b += 8;
+			printf("getfb: %d %d %d %d\n", x, y, w, h);
+			unpackfb(b, x*16, y, w*16, h);
+			break;
+
+		case MSG_WD:
+			getupdate(b2w(b), b2w(b+2));
+			break;
+
+		default:
+			fprintf(stderr, "unknown msg type %d\n", type);
+		}
+	}
+	printf("connection hung up\n");
+	exit(0);
+}
+
 int
 main(int argc, char *argv[])
 {
+	pthread_t thread;
 	SDL_Window *window;
 	SDL_Event event;
 	int running;
@@ -340,6 +390,8 @@ main(int argc, char *argv[])
 
 	getdpykbd();
 	getfb();
+
+	pthread_create(&thread, nil, readthread, nil);
 
 	running = 1;
 	while(running){
