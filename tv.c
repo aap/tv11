@@ -39,6 +39,8 @@ enum {
 };
 
 static pthread_mutex_t lock;
+static pthread_mutex_t kblock;
+static pthread_cond_t kbcond;
 #define GUARD	pthread_mutex_lock(&lock)
 #define UNGUARD	pthread_mutex_unlock(&lock)
 
@@ -170,12 +172,13 @@ dato_tv(Bus *bus, void *dev)
 			tv->curbuf = nil;
 		return 0;
 	case KMS:
-		tv->kms = d;
-		// TODO: do something
+		tv->kms = d & ~037;
+		SETMASK(tv->kma_hi, (d&3)<<16, 3<<16);
 		return 0;
 	case KMA:
-		tv->kma = d;
-		// TODO: do something
+		tv->kma_lo = d & 0174;
+		tv->kma_hi = d & ~0177;
+		SETMASK(tv->kma_hi, d&~0177, ~0177);
 		return 0;
 	case VSW:{
 		int i, o, s;
@@ -245,12 +248,12 @@ datob_tv(Bus *bus, void *dev)
 			tv->curbuf = nil;
 		return 0;
 	case KMS:
-		// TODO: do something
-		SETMASK(tv->kms, d, m);
+		/* Don't know if this is allowed,
+		 * so catch it if it happens. */
+		assert(0 && "KMS write");
 		return 0;
 	case KMA:
-		// TODO: do something
-		SETMASK(tv->kma, d, m);
+		assert(0 && "KMA write");
 		return 0;
 	case VSW:
 	case ASW:
@@ -281,10 +284,10 @@ dati_tv(Bus *bus, void *dev)
 		bus->data = tv->creg;
 		return 0;
 	case KMS:
-		bus->data = tv->kms;
+		bus->data = tv->kms&~037 | tv->kma_hi>>16 & 3;
 		return 0;
 	case KMA:
-		bus->data = tv->kma;
+		bus->data = tv->kma_hi | tv->kma_lo;
 		return 0;
 	case VSW:
 	case ASW:
@@ -303,8 +306,13 @@ reset_tv(void *dev)
 	tv->curbuf = &tv->buffers[tv->creg & 0377];
 	tv->creg = 0;
 	memset(tv->vswsect, 0, sizeof(tv->vswsect));
+
 	tv->kms = 0;
-	tv->kma = 0;
+	tv->kma_hi = 0;
+	tv->kma_lo = 0;
+	tv->km_haskey = 0;
+	tv->km_kbd = 0;
+	tv->km_key = 0;
 
 	updatevsw(tv);
 
@@ -327,6 +335,8 @@ inittv(TV *tv)
 	for(i = 0; i < NUMOUTPUTS; i++)
 		tv->omap[i] = -1;
 	pthread_mutex_init(&lock, nil);
+	pthread_mutex_init(&kblock, nil);
+	pthread_cond_init(&kbcond, nil);
 }
 
 /*
@@ -341,6 +351,7 @@ enum {
 	/* 11 to TV */
 	MSG_FB,
 	MSG_WD,
+	MSG_CLOSE,
 };
 
 word
@@ -470,6 +481,23 @@ closecon(TV *tv, TVcon *con)
 }
 
 void
+closetv(TV *tv)
+{
+	uint8 buf[3];
+	int i;
+	for(i = 0; i < NUMCONNECTIONS; i++)
+		if(tv->cons[i].fd >= 0){
+			msgheader(buf, MSG_CLOSE, 1);
+			write(tv->cons[i].fd, buf, 3);
+			/* wait for close */
+			read(tv->cons[i].fd, buf, 1);
+			/* this will cause the handletv thread
+			 * to close the connection...if it makes
+			 * it that far */
+		}
+}
+
+void
 accepttv(int fd, void *arg)
 {
 	TV *tv = arg;
@@ -494,6 +522,66 @@ accepttv(int fd, void *arg)
 	printf("connected display %o\n", con->dpy);
 }
 
+int
+svc_tv(Bus *bus, void *dev)
+{
+	TV *tv = dev;
+	word key, kbd;
+	int ch;
+
+	ch = (tv->kms&0100040) == 0100040 ? 5 : 0;
+	if(!tv->km_haskey)
+		return ch;
+	pthread_mutex_lock(&kblock);
+	tv->km_haskey = 0;
+	key = tv->km_key;
+	kbd = tv->km_kbd;
+	pthread_cond_signal(&kbcond);
+	pthread_mutex_unlock(&kblock);
+
+	printf("writing key: %o %o\n", key, kbd);
+	bus->addr = tv->kma_hi | tv->kma_lo;
+	bus->data = key;
+	dato_bus(bus);
+	tv->kma_lo = tv->kma_lo+2 & 0177;
+	bus->addr = tv->kma_hi | tv->kma_lo;
+	bus->data = (kbd&077) << 8;
+	dato_bus(bus);
+	tv->kma_lo = tv->kma_lo+2 & 0177;
+	tv->kms &= ~0200;	/* DMA done */
+	tv->kms |= 0100000;	/* interrupt bit */
+	ch = (tv->kms&0100040) == 0100040 ? 5 : 0;
+	return ch;
+}
+
+int
+bg_tv(void *dev)
+{
+	TV *tv = dev;
+	tv->kms &= ~0100000;
+	return 0340;
+}
+
+/* Send key to emu thread to write to memory.
+ * This BLOCKS if the emu thread doesn't consume keys! */
+static void
+sendkey(TV *tv, word kbd, word key)
+{
+	if((tv->kms & 0100) == 0)	/* write to mem */
+		return;
+
+	/* wait until we can send a key */
+	pthread_mutex_lock(&kblock);
+	tv->kms |= 0200;
+	while(tv->km_haskey != 0)
+		pthread_cond_wait(&kbcond, &kblock);
+
+	tv->km_haskey = 1;
+	tv->km_key = key;
+	tv->km_kbd = kbd;
+	pthread_mutex_unlock(&kblock);
+}
+
 /* This is executed within GUARDs */
 static void
 handlemsg(TV *tv, TVcon *con)
@@ -516,7 +604,7 @@ err:
 	type = *b++;
 	switch(type){
 	case MSG_KEYDN:
-		printf("key: %o %o\n", con->kbd, b2w(b));
+		sendkey(tv, con->kbd, b2w(b));
 		break;
 
 	case MSG_GETFB:
@@ -639,4 +727,33 @@ servetv(TV *tv, int port)
 	sa->tv = tv;
 	sa->port = port;
 	pthread_create(&th, nil, servetv_thread, sa);
+}
+
+void
+tvtest(TV *tv, Bus *bus)
+{
+	bus->addr = VSW;
+	bus->data = WD(0 | 0, 1);
+	dato_bus(bus);
+	bus->data = WD(0 | 1, 2);
+	dato_bus(bus);
+	bus->data = WD(0 | 2, 3);
+	dato_bus(bus);
+	bus->data = WD(0 | 3, 4);
+	dato_bus(bus);
+	vswinfo(tv);
+
+	bus->addr = KMA;
+	bus->data = 01200;
+	dato_bus(bus);
+	bus->addr = KMS;
+	bus->data = 0140;
+	dato_bus(bus);
+
+	bus->addr = KMS;
+	dati_bus(bus);
+	printf("kms read: %o\n", bus->data);
+	bus->addr = KMA;
+	dati_bus(bus);
+	printf("kma read: %o\n", bus->data);
 }

@@ -42,6 +42,7 @@ enum {
 	/* 11 to TV */
 	MSG_FB,
 	MSG_WD,
+	MSG_CLOSE,
 };
 
 void
@@ -357,6 +358,10 @@ readthread(void *arg)
 		case MSG_WD:
 			getupdate(b2w(b), b2w(b+2));
 			break;
+
+		case MSG_CLOSE:
+			close(fd);
+			exit(0);
 
 		default:
 			fprintf(stderr, "unknown msg type %d\n", type);

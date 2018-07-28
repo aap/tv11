@@ -260,7 +260,7 @@ dato_ke11(Bus *bus, void *dev)
 {
 	KE11 *ke = dev;
 	if(bus->addr >= 0777300 && bus->addr < 0777320){
-		printf("EAE DATO %o %o\n", bus->addr, bus->data);
+//		printf("EAE DATO %o %o\n", bus->addr, bus->data);
 		switch(bus->addr){
 		case KE_DIV:
 			ke->x = bus->data;
@@ -308,7 +308,7 @@ datob_ke11(Bus *bus, void *dev)
 {
 	KE11 *ke = dev;
 	if(bus->addr >= 0777300 && bus->addr < 0777320){
-		printf("EAE DATOB %o %o\n", bus->addr, bus->data);
+//		printf("EAE DATOB %o %o\n", bus->addr, bus->data);
 		switch(bus->addr){
 		case KE_DIV:
 			ke->x = sxt(bus->data);
@@ -373,7 +373,7 @@ dati_ke11(Bus *bus, void *dev)
 {
 	KE11 *ke = dev;
 	if(bus->addr >= 0777300 && bus->addr < 0777320){
-		printf("EAE DATI %o\n", bus->addr);
+//		printf("EAE DATI %o\n", bus->addr);
 		switch(bus->addr){
 		case KE_DIV:
 		case KE_MULT:
