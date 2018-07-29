@@ -1,5 +1,35 @@
 #include "tv11.h"
 
+enum {
+	PSW_PR = 0340,
+	PSW_T = 020,
+	PSW_N = 010,
+	PSW_Z = 004,
+	PSW_V = 002,
+	PSW_C = 001,
+};
+
+enum {
+	TRAP_STACK = 1,
+	TRAP_PWR = 2,	// can't happen
+	TRAP_BR7 = 4,
+	TRAP_BR6 = 010,
+	TRAP_CLK = 020,
+	TRAP_BR5 = 040,
+	TRAP_BR4 = 0100,
+	TRAP_RX  = 0200,
+	TRAP_TX  = 0400,
+	TRAP_CSTOP = 01000	// can't happen?
+};
+
+#define ISSET(f) ((cpu->psw&(f)) != 0)
+
+enum {
+	STATE_HALTED = 0,
+	STATE_RUNNING,
+	STATE_WAITING
+};
+
 
 #define CLOCKFREQ (1000000000/60)
 
@@ -919,12 +949,11 @@ step(KD11B *cpu)
 	switch(cpu->ir & 7){
 	case 0:		/* HALT */
 		trace("%06o HALT\n", cpu->r[7]-2);
-		cpu->running = 0;
+		cpu->state = STATE_HALTED;
 		return;
 	case 1:		/* WAIT */
 		trace("%06o WAIT\n", cpu->r[7]-2);
-		cpu->running = 0;
-		cpu->waiting = 1;
+		cpu->state = STATE_WAITING;
 		return;
 	case 2:		/* RTI */
 		trace("%06o RTI\n", cpu->r[7]-2);
@@ -965,7 +994,7 @@ be:
 	cpu->be++;
 	if(cpu->be > 1){
 		printf("double bus error, HALT\n");
-		cpu->running = 0;
+		cpu->state = STATE_HALTED;
 		return;
 	}
 printf("bus error\n");
@@ -1051,10 +1080,10 @@ void
 run(KD11B *cpu)
 {
 	int n;
-	cpu->running = 1;
+	cpu->state = STATE_RUNNING;
 	initclock();
 	n = 0;
-	while(cpu->running || cpu->waiting){
+	while(cpu->state != STATE_HALTED){
 		handleclock(cpu);
 
 		cpu->traps &= ~TRAP_CLK;
@@ -1071,9 +1100,9 @@ run(KD11B *cpu)
 
 		svc(cpu, cpu->bus);
 
-		if(cpu->running || cpu->traps){
-			cpu->running = 1;
-			cpu->waiting = 0;
+		if(cpu->state == STATE_RUNNING ||
+		   cpu->state == STATE_WAITING && cpu->traps){
+			cpu->state = STATE_RUNNING;
 			step(cpu);
 		}
 

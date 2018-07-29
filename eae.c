@@ -440,9 +440,9 @@ eaetest(KE11 *ke)
 	divide(ke);
 */
 
-	int a, b, c, d;
+/*	int a, b, c, d;
 	//some multiplication test
-/*	for(a = 0; a < 0077777; a++){
+	for(a = 0; a < 0077777; a++){
 		for(b = 0; b < 0077777; b++){
 			c = a * b;
 			ke->ac = 0; ke->mq = a;

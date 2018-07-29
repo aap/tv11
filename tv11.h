@@ -44,8 +44,7 @@ struct KD11B
 	byte psw;
 	int traps;
 	int be;
-	int running;
-	int waiting;
+	int state;
 
 	struct {
 		int (*bg)(void *dev);
@@ -78,31 +77,6 @@ struct KD11B
 };
 void run(KD11B *cpu);
 void reset(KD11B *cpu);
-
-enum {
-	PSW_PR = 0340,
-	PSW_T = 020,
-	PSW_N = 010,
-	PSW_Z = 004,
-	PSW_V = 002,
-	PSW_C = 001,
-};
-
-enum {
-	TRAP_STACK = 1,
-	TRAP_PWR = 2,	// can't happen
-	TRAP_BR7 = 4,
-	TRAP_BR6 = 010,
-	TRAP_CLK = 020,
-	TRAP_BR5 = 040,
-	TRAP_BR4 = 0100,
-	TRAP_RX  = 0200,
-	TRAP_TX  = 0400,
-	TRAP_CSTOP = 01000	// can't happen?
-};
-
-#define ISSET(f) ((cpu->psw&(f)) != 0)
-
 
 struct Busdev
 {

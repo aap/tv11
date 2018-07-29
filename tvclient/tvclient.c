@@ -29,13 +29,16 @@ typedef uint8_t uint8;
 
 char *argv0;
 
+int scale = 1;
+
 SDL_Renderer *renderer;
 SDL_Texture *screentex;
-uint32 fb[WIDTH*HEIGHT];
+uint32 fb[WIDTH*HEIGHT*4];
 uint32 fg = 0x00FF0000;
 uint32 bg = 0x00000000;
 uint32 drawev;
 int fd;
+int stride;
 
 uint8 largebuf[64*1024];
 
@@ -121,7 +124,7 @@ win:
 void
 draw(void)
 {
-	SDL_UpdateTexture(screentex, nil, fb, WIDTH*sizeof(uint32));
+	SDL_UpdateTexture(screentex, nil, fb, WIDTH*scale*sizeof(uint32));
 	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
 	SDL_RenderClear(renderer);
 	SDL_RenderCopy(renderer, screentex, nil, nil);
@@ -284,21 +287,25 @@ dumpbuf(uint8 *b, int n)
 void
 unpackfb(uint8 *src, int x, int y, int w, int h)
 {
-	int i, j;
+	int i, j, k;
 	uint32 *dst;
 	uint16 wd;
 
-	dst = &fb[y*WIDTH + x];
+	dst = &fb[(y*stride + x)*scale];
 	for(i = 0; i < h; i++){
 		for(j = 0; j < w; j++){
 			if(j%16 == 0){
 				wd = b2w(src);
 				src += 2;
 			}
-			dst[j] = wd&0100000 ? fg : bg;
+			for(k = 0; k < scale; k++){
+				dst[j*scale+k] = wd&0100000 ? fg : bg;
+				dst[j*scale+k*stride] = wd&0100000 ? fg : bg;
+				dst[j*scale+k*stride+k] = wd&0100000 ? fg : bg;
+			}
 			wd <<= 1;
 		}
-		dst += WIDTH;
+		dst += stride*scale;
 	}
 //	printf("update: %d %d %d %d\n", x, y, w, h);
 }
@@ -306,11 +313,18 @@ unpackfb(uint8 *src, int x, int y, int w, int h)
 void
 getupdate(uint16 addr, uint16 wd)
 {
-	int j;
+	int x, y;
+	int j, k;
 	uint32 *dst;
-	dst = &fb[addr*16];
+	x = (addr*16) % WIDTH;
+	y = (addr*16) / WIDTH;
+	dst = &fb[(y*stride + x)*scale];
 	for(j = 0; j < 16; j++){
-		dst[j] = wd&0100000 ? fg : bg;
+		for(k = 0; k < scale; k++){
+			dst[j*scale+k] = wd&0100000 ? fg : bg;
+			dst[j*scale+k*stride] = wd&0100000 ? fg : bg;
+			dst[j*scale+k*stride+k] = wd&0100000 ? fg : bg;
+		}
 		wd <<= 1;
 	}
 }
@@ -417,6 +431,9 @@ main(int argc, char *argv[])
 	case 'p':
 		port = atoi(EARGF(usage()));
 		break;
+	case '2':
+		scale++;
+		break;
 	}ARGEND;
 
 	if(argc < 1)
@@ -424,22 +441,23 @@ main(int argc, char *argv[])
 
 	host = argv[0];
 
+	stride = WIDTH*scale;
 
 
 	initkeymap();
 
 	fd = dial(host, port);
 
-	if(SDL_CreateWindowAndRenderer(WIDTH, HEIGHT, 0, &window, &renderer) < 0)
+	if(SDL_CreateWindowAndRenderer(WIDTH*scale, HEIGHT*scale, 0, &window, &renderer) < 0)
 		panic("SDL_CreateWindowAndRenderer() failed: %s\n", SDL_GetError());
 
 	screentex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888,
-			SDL_TEXTUREACCESS_STREAMING, WIDTH, HEIGHT);
+			SDL_TEXTUREACCESS_STREAMING, WIDTH*scale, HEIGHT*scale);
 
 	drawev = SDL_RegisterEvents(1);
 
 	int i;
-	for(i = 0; i < WIDTH*HEIGHT; i++)
+	for(i = 0; i < WIDTH*scale*HEIGHT*scale; i++)
 		fb[i] = bg;
 
 	getdpykbd();
