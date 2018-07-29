@@ -6,6 +6,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 
 int
 hasinput(int fd)
@@ -23,22 +24,34 @@ hasinput(int fd)
 int
 dial(char *host, int port)
 {
+	char portstr[32];
 	int sockfd;
-	struct sockaddr_in server;
+	struct addrinfo *result, *rp, hints;
 
-	sockfd = socket(AF_INET, SOCK_STREAM, 0);
-	if(sockfd < 0){
-		perror("error: socket");
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+
+	snprintf(portstr, 32, "%d", port);
+	if(getaddrinfo(host, portstr, &hints, &result)){
+		perror("error: getaddrinfo");
 		return -1;
 	}
-	memset(&server, 0, sizeof(server));
-	server.sin_family = AF_INET;
-	inet_pton(AF_INET, host, &server.sin_addr);
-	server.sin_port = htons(port);
-	if(connect(sockfd, (struct sockaddr*)&server, sizeof(server)) < 0){
-		perror("error: connect");
-		return -1;
+
+	for(rp = result; rp; rp = rp->ai_next){
+		sockfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+		if(sockfd < 0)
+			continue;
+		if(connect(sockfd, rp->ai_addr, rp->ai_addrlen) >= 0)
+			goto win;
+		close(sockfd);
 	}
+	freeaddrinfo(result);
+	perror("error");
+	return -1;
+
+win:
+	freeaddrinfo(result);
 	return sockfd;
 }
 

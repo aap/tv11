@@ -434,9 +434,43 @@ eaetest(KE11 *ke)
 	ke->x = 0321;
 	mult(ke);
 */
+/*
 	ke->ac = 00021; ke->mq = 0;
 	ke->x = 0321;
 	divide(ke);
+*/
+
+	int a, b, c, d;
+	//some multiplication test
+/*	for(a = 0; a < 0077777; a++){
+		for(b = 0; b < 0077777; b++){
+			c = a * b;
+			ke->ac = 0; ke->mq = a;
+			ke->x = b;
+			mult(ke);
+			d = ke->ac<<16 | ke->mq;
+			assert(c == d);
+			if(a == 0)
+				continue;
+			ke->x = a;
+			divide(ke);
+			assert(ke->ac == 0);
+			assert(ke->mq == b);
+		}
+		printf("%o\n", a);
+	}
+	// division
+	for(a = 0; a < 0077777; a++){
+		printf("%o\n", a);
+		for(b = 1; b < 0077777; b++){
+			ke->ac = 0; ke->mq = a;
+			ke->x = b;
+			divide(ke);
+			assert(ke->mq == a / b);
+			assert(ke->ac == a % b);
+		}
+	}
+*/
 	
-	printf("%06o %06o %d %o\n", ke->ac, ke->mq, ke->sc, ke->sr);
+//	printf("%06o %06o %d %o\n", ke->ac, ke->mq, ke->sc, ke->sr);
 }

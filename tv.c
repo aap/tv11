@@ -39,6 +39,13 @@ enum {
 	ALU_SET
 };
 
+/* Used:
+ * ANDC
+ * XOR
+ * IOR
+ * SET
+ */
+
 enum {
 	WIDTH = 576,
 	HEIGHT = 454
@@ -172,6 +179,7 @@ dato_tv(Bus *bus, void *dev)
 			case ALU_SETO:	w = ~0; break;
 			case ALU_IOR:	w |= d; break;
 			case ALU_SET:	w = d; break;
+			default: w = 0;	/* can't happen */
 			}
 			tv->curbuf->fb[waddr] = w;
 			sendupdate(tv, waddr);
@@ -252,6 +260,7 @@ datob_tv(Bus *bus, void *dev)
 			case ALU_SETO:	w = ~0; break;
 			case ALU_IOR:	w |= d; break;
 			case ALU_SET:	w = d; break;
+			default: w = 0;	/* can't happen */
 			}
 			SETMASK(tv->curbuf->fb[waddr], w, m);
 			sendupdate(tv, waddr);

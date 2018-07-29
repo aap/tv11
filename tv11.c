@@ -1,4 +1,5 @@
 #include "tv11.h"
+#include "args.h"
 
 typedef struct Ten11 Ten11;
 struct Ten11
@@ -251,7 +252,8 @@ setunibus(uint8 n)
 	buf[2] = n;
 	write(ten11.fd, buf, 3);
 
-	if(read(ten11.fd, &len, 1) != 1) goto err;
+	if(read(ten11.fd, &len, 1) != 1)
+		goto err;
 	if(len != 1) goto err;
 	if(read(ten11.fd, buf, len) != len) goto err;
 	if(buf[0] != 3){
@@ -265,9 +267,25 @@ err:
 	exit(0);
 }
 
-int
-main()
+char *argv0;
+
+void
+usage(void)
 {
+	fprintf(stderr, "usage: %s [-p port] [-l listenport] server\n", argv0);
+	fprintf(stderr, "\tserver: host running pdp-10\n");
+	fprintf(stderr, "\t-p: pdp-10 port; default 1110\n");
+	fprintf(stderr, "\t-l: tv11 listen port; default 11100\n");
+	exit(0);
+}
+
+int
+main(int argc, char *argv[])
+{
+	int port;
+	int lport;
+	char *host;
+
 	memset(&cpu, 0, sizeof(KD11B));
 	memset(&bus, 0, sizeof(Bus));
 	cpu.bus = &bus;
@@ -276,13 +294,25 @@ main()
 	busadddev(&bus, &kebusdev);
 	busadddev(&bus, &ten11busdev);
 
+	port = 1110;
+	lport = 11100;
+	ARGBEGIN{
+	case 'p':
+		port = atoi(EARGF(usage()));
+		break;
+	case 'l':
+		lport = atoi(EARGF(usage()));
+		break;
+	}ARGEND;
+
+	if(argc < 1)
+		usage();
+
+	host = argv[0];
 
 	printf("connecting to PDP-10\n");
 //	ten11.fd = -1;
-//	ten11.fd = dial("10.24.0.2", 1234);
-	ten11.fd = dial("localhost", 1234);
-//	ten11.fd = dial("its.pdp10.se", 1234);
-//	ten11.fd = dial("88.99.191.74", 1234);
+	ten11.fd = dial(host, port);
 	if(ten11.fd < 0){
 		printf("can't connect to PDP-10\n");
 //		return 1;
@@ -301,28 +331,31 @@ main()
 //	cpu.r[7] = 0200;
 //	cpu.sw = 0104000;
 
+	//void eaetest(KE11 *ke);
+	//eaetest(&ke11);
+
 	inittv(&tv);
 
 	reset(&cpu);
+
+	/* open a tty if it exists */
 	cpu.ttyfd = open("/tmp/tty", O_RDWR);
 	printf("tty connected to %d\n", cpu.ttyfd);
 
 	/* start the two threads for listening for
 	 * and handling TV display connections */
 	handletvs(&tv);
-	servetv(&tv, 10000);
+	servetv(&tv, lport);
 
 	//void tvtest(TV *tv, Bus *bus);
 	//tvtest(&tv, &bus);
 
+	/* wait until we get some data from the 10 */
 	cpu.r[7] = 0;
 	memory[0] = 0777;
 	run(&cpu);
 
 	closetv(&tv);
-
-//	void eaetest(KE11 *ke);
-//	eaetest(&ke11);
 
 	return 0;
 }

@@ -10,9 +10,12 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 
 #include <pthread.h>
 #include <SDL.h>
+
+#include "../args.h"
 
 typedef uint32_t uint32;
 typedef uint16_t uint16;
@@ -23,6 +26,8 @@ typedef uint8_t uint8;
 
 #define WIDTH 576
 #define HEIGHT 454
+
+char *argv0;
 
 SDL_Renderer *renderer;
 SDL_Texture *screentex;
@@ -82,23 +87,34 @@ msgheader(uint8 *b, uint8 type, uint16 length)
 int
 dial(char *host, int port)
 {
+	char portstr[32];
 	int sockfd;
-	struct sockaddr_in serv_addr;
+	struct addrinfo *result, *rp, hints;
 
-	sockfd = socket(AF_INET, SOCK_STREAM, 0);
-	if(sockfd < 0){
-		perror("error: socket");
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+
+	snprintf(portstr, 32, "%d", port);
+	if(getaddrinfo(host, portstr, &hints, &result)){
+		perror("error: getaddrinfo");
 		return -1;
 	}
-	memset(&serv_addr, 0, sizeof(serv_addr));
-	serv_addr.sin_family = AF_INET;
-	inet_pton(AF_INET, host, &serv_addr.sin_addr);
-	serv_addr.sin_port = htons(port);
 
-	if(connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0){
-		perror("error: connect");
-		return -1;
+	for(rp = result; rp; rp = rp->ai_next){
+		sockfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+		if(sockfd < 0)
+			continue;
+		if(connect(sockfd, rp->ai_addr, rp->ai_addrlen) >= 0)
+			goto win;
+		close(sockfd);
 	}
+	freeaddrinfo(result);
+	perror("error");
+	return -1;
+
+win:
+	freeaddrinfo(result);
 	return sockfd;
 }
 
@@ -377,6 +393,15 @@ readthread(void *arg)
 	exit(0);
 }
 
+void
+usage(void)
+{
+	fprintf(stderr, "usage: %s [-p port] server\n", argv0);
+	fprintf(stderr, "\tserver: host running tv11\n");
+	fprintf(stderr, "\t-p: tv11 port; default 11100\n");
+	exit(0);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -384,10 +409,26 @@ main(int argc, char *argv[])
 	SDL_Window *window;
 	SDL_Event event;
 	int running;
+	int port;
+	char *host;
+
+	port = 11100;
+	ARGBEGIN{
+	case 'p':
+		port = atoi(EARGF(usage()));
+		break;
+	}ARGEND;
+
+	if(argc < 1)
+		usage();
+
+	host = argv[0];
+
+
 
 	initkeymap();
 
-	fd = dial("localhost", 10000);
+	fd = dial(host, port);
 
 	if(SDL_CreateWindowAndRenderer(WIDTH, HEIGHT, 0, &window, &renderer) < 0)
 		panic("SDL_CreateWindowAndRenderer() failed: %s\n", SDL_GetError());
