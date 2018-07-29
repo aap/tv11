@@ -13,6 +13,7 @@ enum {
 	TVLO = 060000,
 	CSA = 0157776,
 	CREG = 0764044,
+	UNK = 0764046,
 	KMS = 0764050,
 	KMA = 0764052,
 	VSW = 0764060,
@@ -36,6 +37,11 @@ enum {
 	ALU_SETO,
 	ALU_IOR,
 	ALU_SET
+};
+
+enum {
+	WIDTH = 576,
+	HEIGHT = 454
 };
 
 static pthread_mutex_t lock;
@@ -98,14 +104,23 @@ static struct {
 	{ 037,	041 },	// 3rd Floor #1
 };
 
+void sendfb(TV *tv, int osw);
 void sendupdate(TV *tv, uint16 addr);
 
 void
 vswinfo(TV *tv)
 {
-	int i;
+	int i, j;
+	int osw;
+	printf("Video switch:\n");
 	for(i = 0; i < NUMOUTPUTS; i++)
 		printf("%o|%o -> %o\n", tv->vswsect[0][i], tv->vswsect[1][i], i);
+	printf("frame buffer output:\n");
+	for(i = 0; i < NUMFBUFFERS; i++)
+		for(j = 0; j < tv->buffers[i].nosw; j++){
+			osw = tv->buffers[i].osw[j];
+			printf("%o %o: %o %o\n", i, j, osw, tv->omap[osw]);
+		}
 }
 
 static void
@@ -171,6 +186,9 @@ dato_tv(Bus *bus, void *dev)
 		else
 			tv->curbuf = nil;
 		return 0;
+	case UNK:
+		/* We don't know what this does */
+		return 0;
 	case KMS:
 		tv->kms = d & ~037;
 		SETMASK(tv->kma_hi, (d&3)<<16, 3<<16);
@@ -188,6 +206,7 @@ dato_tv(Bus *bus, void *dev)
 		if(s < 2)
 			tv->vswsect[s][o] = i;
 		updatevsw(tv);
+		sendfb(tv, o);
 		}
 		return 0;
 	case ASW:
@@ -247,6 +266,9 @@ datob_tv(Bus *bus, void *dev)
 		else
 			tv->curbuf = nil;
 		return 0;
+	case UNK:
+		/* We don't know what this does */
+		return 0;
 	case KMS:
 		/* Don't know if this is allowed,
 		 * so catch it if it happens. */
@@ -283,6 +305,10 @@ dati_tv(Bus *bus, void *dev)
 	case CREG:
 		bus->data = tv->creg;
 		return 0;
+	case UNK:
+		/* We don't know what this does */
+		bus->data = 0;
+		return 0;
 	case KMS:
 		bus->data = tv->kms&~037 | tv->kma_hi>>16 & 3;
 		return 0;
@@ -318,7 +344,7 @@ reset_tv(void *dev)
 
 	int i, j;
 	for(i = 0; i < NUMFBUFFERS; i++)
-		for(j = 0; j < 576*454/16; j++)
+		for(j = 0; j < WIDTH*HEIGHT/16; j++)
 			tv->buffers[i].fb[j] = i+1; //j ^ i;
 }
 
@@ -392,7 +418,7 @@ packfb(TV *tv, uint8 *dst, int osw, int x, int y, int w, int h)
 	word *src1, *src2;
 	word bw1, bw2;
 
-	stride = 576/16;
+	stride = WIDTH/16;
 
 	/* We mix the outputs of both sections for the final output.
 	 * This feature does not seem to be used by the TV system
@@ -416,6 +442,24 @@ printf("inbuf: %d %d\n", n1, n2);
 	}
 }
 
+void
+sendfb(TV *tv, int osw)
+{
+	TVcon *con = &tv->cons[tv->omap[osw]];
+	if(tv->omap[osw] < 0)
+		return;
+	uint8 *b = largebuf;
+	msgheader(b, MSG_FB, 1+8+WIDTH*HEIGHT/8);
+	b += 3;
+	w2b(b, 0);
+	w2b(b+2, 0);
+	w2b(b+4, WIDTH/16);
+	w2b(b+6, HEIGHT);
+	b += 8;
+	packfb(tv, b, con->dpy, 0, 0, WIDTH/16, HEIGHT);
+	write(con->fd, largebuf, 3+8+WIDTH*HEIGHT/8);
+}
+
 /* Send a single word update to all displays */
 void
 sendupdate(TV *tv, uint16 addr)
@@ -430,10 +474,12 @@ sendupdate(TV *tv, uint16 addr)
 	msgheader(buf, MSG_WD, 5);
 	w2b(buf+3, addr);
 
+//	printf("sending update of %o: %o\n", addr, tv->curbuf->fb[addr]);
+
 	/* Again do the mixing thing for no reason */
 	for(i = 0; i < tv->curbuf->nosw; i++){
 		osw = tv->curbuf->osw[i];
-		if(osw < 0)
+		if(osw < 0 || tv->omap[osw] < 0)
 			continue;
 		n1 = dpymap[0][tv->vswsect[0][osw]];
 		n2 = dpymap[1][tv->vswsect[1][osw]];
@@ -442,6 +488,7 @@ sendupdate(TV *tv, uint16 addr)
 		bw1 = n1 < 0 ? 0 : tv->buffers[n1].mask;
 		bw2 = n2 < 0 ? 0 : tv->buffers[n2].mask;
 		w2b(buf+5, w1^bw1 | w2^bw2);
+//printf("updating %o %o %o\n", tv->cons[tv->omap[osw]].fd, addr, w1^bw1 | w2^bw2);
 		write(tv->cons[tv->omap[osw]].fd, buf, 7);
 	}
 }
@@ -756,4 +803,12 @@ tvtest(TV *tv, Bus *bus)
 	bus->addr = KMA;
 	dati_bus(bus);
 	printf("kma read: %o\n", bus->data);
+
+	bus->addr = CREG;
+	bus->data = WD(ALU_SET, 0);
+	dato_bus(bus);
+
+	bus->addr = 0060000 + 0037730;
+	bus->data = ~0;
+	dato_bus(bus);
 }

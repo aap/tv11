@@ -105,7 +105,7 @@ svc_ten11(Bus *bus, void *dev)
 		bus->data = d;
 		if(a&1) goto be;
 		if(dato_bus(bus)) goto be;
-fprintf(stderr, "TEN11 write: %06o %06o\n", bus->addr, bus->data);
+//fprintf(stderr, "TEN11 write: %06o %06o\n", bus->addr, bus->data);
 		buf[0] = 1;
 		buf[1] = 3;
 		write(ten11->fd, buf, 2);
@@ -114,7 +114,7 @@ fprintf(stderr, "TEN11 write: %06o %06o\n", bus->addr, bus->data);
 		bus->addr = a;
 		if(a&1) goto be;
 		if(dati_bus(bus)) goto be;
-fprintf(stderr, "TEN11 read: %06o %06o\n", bus->addr, bus->data);
+//fprintf(stderr, "TEN11 read: %06o %06o\n", bus->addr, bus->data);
 		buf[0] = 3;
 		buf[1] = 3;
 		buf[2] = bus->data;
@@ -277,7 +277,9 @@ main()
 	busadddev(&bus, &ten11busdev);
 
 
-//	ten11.fd = dial("10.24.4.1", 1234);
+	printf("connecting to PDP-10\n");
+//	ten11.fd = -1;
+//	ten11.fd = dial("10.24.0.2", 1234);
 	ten11.fd = dial("localhost", 1234);
 //	ten11.fd = dial("its.pdp10.se", 1234);
 //	ten11.fd = dial("88.99.191.74", 1234);
@@ -287,6 +289,7 @@ main()
 	}else{
 		nodelay(ten11.fd);
 		setunibus(0);
+		printf("connected to PDP-10\n");
 	}
 
 	loadmem("mem.txt");
@@ -304,13 +307,13 @@ main()
 	cpu.ttyfd = open("/tmp/tty", O_RDWR);
 	printf("tty connected to %d\n", cpu.ttyfd);
 
-	void tvtest(TV *tv, Bus *bus);
-	tvtest(&tv, &bus);
-
 	/* start the two threads for listening for
 	 * and handling TV display connections */
 	handletvs(&tv);
 	servetv(&tv, 10000);
+
+	//void tvtest(TV *tv, Bus *bus);
+	//tvtest(&tv, &bus);
 
 	cpu.r[7] = 0;
 	memory[0] = 0777;

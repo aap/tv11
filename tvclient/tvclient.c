@@ -29,6 +29,7 @@ SDL_Texture *screentex;
 uint32 fb[WIDTH*HEIGHT];
 uint32 fg = 0x00FF0000;
 uint32 bg = 0x00000000;
+uint32 drawev;
 int fd;
 
 uint8 largebuf[64*1024];
@@ -231,8 +232,7 @@ keydown(SDL_Keysym keysym)
 	msgheader(largebuf, MSG_KEYDN, 3);
 	w2b(largebuf+3, key);
 	write(fd, largebuf, 5);
-
-//	printf("down: %d %o %o\n", keysym.scancode, key, curmod);
+//	printf("down: %o\n", key);
 }
 
 void
@@ -284,7 +284,7 @@ unpackfb(uint8 *src, int x, int y, int w, int h)
 		}
 		dst += WIDTH;
 	}
-	printf("update: %d %d %d %d\n", x, y, w, h);
+//	printf("update: %d %d %d %d\n", x, y, w, h);
 }
 
 void
@@ -338,6 +338,10 @@ readthread(void *arg)
 	uint8 *b;
 	uint8 type;
 	int x, y, w, h;
+	SDL_Event ev;
+
+	memset(&ev, 0, sizeof(SDL_Event));
+	ev.type = drawev;
 
 	while(read(fd, &len, 2) == 2){
 		len = b2w((uint8*)&len);
@@ -351,12 +355,14 @@ readthread(void *arg)
 			w = b2w(b+4);
 			h = b2w(b+6);
 			b += 8;
-			printf("getfb: %d %d %d %d\n", x, y, w, h);
+			//printf("getfb: %d %d %d %d\n", x, y, w, h);
 			unpackfb(b, x*16, y, w*16, h);
+		//	SDL_PushEvent(&ev);
 			break;
 
 		case MSG_WD:
 			getupdate(b2w(b), b2w(b+2));
+		//	SDL_PushEvent(&ev);
 			break;
 
 		case MSG_CLOSE:
@@ -389,6 +395,8 @@ main(int argc, char *argv[])
 	screentex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888,
 			SDL_TEXTUREACCESS_STREAMING, WIDTH, HEIGHT);
 
+	drawev = SDL_RegisterEvents(1);
+
 	int i;
 	for(i = 0; i < WIDTH*HEIGHT; i++)
 		fb[i] = bg;
@@ -400,8 +408,9 @@ main(int argc, char *argv[])
 
 	running = 1;
 	while(running){
-		if(SDL_WaitEvent(&event) < 0)
-			panic("SDL_PullEvent() error: %s\n", SDL_GetError());
+//		if(SDL_WaitEvent(&event) < 0)
+//			panic("SDL_PullEvent() error: %s\n", SDL_GetError());
+		if(SDL_PollEvent(&event)){
 		switch(event.type){
 		case SDL_MOUSEBUTTONDOWN:
 			break;
@@ -419,6 +428,12 @@ main(int argc, char *argv[])
 		case SDL_QUIT:
 			running = 0;
 			break;
+
+		default:
+			/* catch user event */
+			continue;
+			break;
+		}
 		}
 		draw();
 	}

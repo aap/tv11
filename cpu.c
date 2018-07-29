@@ -41,10 +41,25 @@ ubxt(word a)
 }
 
 void
-printstate(KD11B *cpu)
+tracestate(KD11B *cpu)
 {
 	(void)cpu;
 	trace(" R0 %06o R1 %06o R2 %06o R3 %06o R4 %06o R5 %06o R6 %06o R7 %06o\n"
+		" 10 %06o 11 %06o 12 %06o 13 %06o 14 %06o 15 %06o 16 %06o 17 %06o\n"
+		" BA %06o IR %06o PSW %03o\n"
+		,
+		cpu->r[0], cpu->r[1], cpu->r[2], cpu->r[3],
+		cpu->r[4], cpu->r[5], cpu->r[6], cpu->r[7],
+		cpu->r[8], cpu->r[9], cpu->r[10], cpu->r[11],
+		cpu->r[12], cpu->r[13], cpu->r[14], cpu->r[15],
+		cpu->ba, cpu->ir, cpu->psw);
+}
+
+void
+printstate(KD11B *cpu)
+{
+	(void)cpu;
+	printf(" R0 %06o R1 %06o R2 %06o R3 %06o R4 %06o R5 %06o R6 %06o R7 %06o\n"
 		" 10 %06o 11 %06o 12 %06o 13 %06o 14 %06o 15 %06o 16 %06o 17 %06o\n"
 		" BA %06o IR %06o PSW %03o\n"
 		,
@@ -87,53 +102,53 @@ reset(KD11B *cpu)
 int
 dati(KD11B *cpu, int b)
 {
-trace("dati %06o\n", cpu->ba);
+trace("dati %06o: ", cpu->ba);
 	/* allow odd addresses for bytes and registers */
 	int alodd = b || cpu->ba >= 0177700 && cpu->ba < 0177720;
 
 	if(!alodd && cpu->ba&1)
-		return 1;
+		goto be;
 
 	/* internal registers */
 	if((cpu->ba&0177400) == 0177400){
 		if((cpu->ba&0360) == 0300){
 			cpu->bus->data = cpu->r[cpu->ba&017];
-			return 0;
+			goto ok;
 		}
 		switch(cpu->ba&0377){
 		/* Line clock */
 		case 0146:
 			cpu->bus->data = cpu->lc_int_enab<<6 |
 				cpu->lc_clock<<7;
-			return 0;
+			goto ok;
 		/* Receive */
 		case 0160:
 			cpu->bus->data = cpu->rcd_int_enab<<6 |
 				cpu->rcd_int<<7 |
 				cpu->rcd_busy<<1;
-			return 0;
+			goto ok;
 		case 0162:
 			cpu->bus->data = cpu->rcd_b;
 			cpu->rcd_b = 0;
 			cpu->rcd_da = 0;
 			cpu->rcd_int = 0;
-			return 0;
+			goto ok;
 		/* Transmit */
 		case 0164:
 			cpu->bus->data = cpu->xmit_maint<<2 |
 				cpu->xmit_int_enab<<6 |
 				cpu->xmit_int<<7;
-			return 0;
+			goto ok;
 		case 0166:
 			/* write only */
 			cpu->bus->data = 0;
-			return 0;
+			goto ok;
 		case 0170: case 0171:
 			cpu->bus->data = cpu->sw;
-			return 0;
+			goto ok;
 		case 0376: case 0377:
 			cpu->bus->data = cpu->psw;
-			return 0;
+			goto ok;
 
 		/* respond but don't return real data */
 		case 0147:
@@ -142,30 +157,41 @@ trace("dati %06o\n", cpu->ba);
 		case 0165:
 		case 0167:
 			cpu->bus->data = 0;
-			return 0;
+			goto ok;
 		}
 	}
 
 	cpu->bus->addr = ubxt(cpu->ba)&~1;
-	return dati_bus(cpu->bus);
+	if(dati_bus(cpu->bus))
+		goto be;
+ok:
+	trace("%06o\n", cpu->bus->data);
+	cpu->be = 0;
+	return 0;
+be:
+	trace("BE\n");
+	cpu->be++;
+	return 1;
 }
 
 int
 dato(KD11B *cpu, int b)
 {
-//trace("dato %06o %06o %d\n", cpu->ba, cpu->bus, b);
+trace("dato %06o %06o %d\n", cpu->ba, cpu->bus->data, b);
 	/* allow odd addresses for bytes and registers */
 	int alodd = b || cpu->ba >= 0177700 && cpu->ba < 0177720;
 
 	if(!alodd && cpu->ba&1)
-		return 1;
+		goto be;
+
+	cpu->be = 0;
 
 	/* internal registers */
 	if((cpu->ba&0177400) == 0177400){
 		if((cpu->ba&0360) == 0300){
 			/* no idea if byte access even makes sense here */
 			cpu->r[cpu->ba&017] = cpu->bus->data;
-			return 0;
+			goto ok;
 		}
 		switch(cpu->ba&0377){
 		/* Line clock */
@@ -175,7 +201,7 @@ dato(KD11B *cpu, int b)
 				cpu->lc_clock = 0;
 				cpu->lc_int = 0;
 			}
-			return 0;
+			goto ok;
 		/* Receive */
 		case 0160:
 			// TODO: RDR ENAB
@@ -183,10 +209,10 @@ dato(KD11B *cpu, int b)
 			if(!cpu->rcd_int_enab && cpu->bus->data&0100 && cpu->rcd_da)
 				cpu->rcd_int = 1;
 			cpu->rcd_int_enab = cpu->bus->data>>6 & 1;
-			return 0;
+			goto ok;
 		case 0162:
 			/* read only */
-			return 0;
+			goto ok;
 		/* Transmit */
 		case 0164:
 			// TODO: MAINT
@@ -194,20 +220,20 @@ dato(KD11B *cpu, int b)
 			if(!cpu->xmit_int_enab && cpu->bus->data&0100 && cpu->xmit_tbmt)
 				cpu->xmit_int = 1;
 			cpu->xmit_int_enab = cpu->bus->data>>6 & 1;
-			return 0;
+			goto ok;
 		case 0166:
 			cpu->xmit_b = cpu->bus->data;
 			cpu->xmit_tbmt = 0;
 			cpu->xmit_int = 0;
-			return 0;
+			goto ok;
 		case 0170: case 0171:
 			/* can't write switches */
-			return 0;
+			goto ok;
 		case 0376: case 0377:
 			/* writes 0 for the odd byte.
 			   I think this is correct. */
 			cpu->psw = cpu->bus->data;
-			return 0;
+			goto ok;
 
 		/* respond but don't do anything */
 		case 0147:
@@ -215,17 +241,25 @@ dato(KD11B *cpu, int b)
 		case 0163:
 		case 0165:
 		case 0167:
-			return 0;
+			goto ok;
 		}
 	}
 
 	if(b){
 		cpu->bus->addr = ubxt(cpu->ba);
-		return datob_bus(cpu->bus);
+		if(datob_bus(cpu->bus))
+			goto be;
 	}else{
 		cpu->bus->addr = ubxt(cpu->ba)&~1;
-		return dato_bus(cpu->bus);
+		if(dato_bus(cpu->bus))
+			goto be;
 	}
+ok:
+	cpu->be = 0;
+	return 0;
+be:
+	cpu->be++;
+	return 1;
 }
 
 static void
@@ -924,7 +958,16 @@ ri:
 	goto trap;
 
 ill:
+	cpu->r[10] = 4;
+	goto trap;
+
 be:
+	cpu->be++;
+	if(cpu->be > 1){
+		printf("double bus error, HALT\n");
+		cpu->running = 0;
+		return;
+	}
 printf("bus error\n");
 	cpu->r[10] = 4;
 	goto trap;
@@ -974,7 +1017,7 @@ service:
 		return;
 
 trap:
-	printf("TRAP %o\n", cpu->r[10]);
+	trace("TRAP %o\n", cpu->r[10]);
 	/* save psw */
 	cpu->r[6] -= 2;
 	cpu->ba = cpu->r[6];
@@ -1000,7 +1043,7 @@ trap:
 	/* no trace trap after a trap */
 	oldpsw = cpu->psw;
 
-	printstate(cpu);
+	tracestate(cpu);
 	goto service;
 }
 
@@ -1059,13 +1102,5 @@ run(KD11B *cpu)
 		}
 	}
 
-	printf(" R0 %06o R1 %06o R2 %06o R3 %06o R4 %06o R5 %06o R6 %06o R7 %06o\n"
-		" 10 %06o 11 %06o 12 %06o 13 %06o 14 %06o 15 %06o 16 %06o 17 %06o\n"
-		" BA %06o IR %06o PSW %03o\n"
-		,
-		cpu->r[0], cpu->r[1], cpu->r[2], cpu->r[3],
-		cpu->r[4], cpu->r[5], cpu->r[6], cpu->r[7],
-		cpu->r[8], cpu->r[9], cpu->r[10], cpu->r[11],
-		cpu->r[12], cpu->r[13], cpu->r[14], cpu->r[15],
-		cpu->ba, cpu->ir, cpu->psw);
+	printstate(cpu);
 }

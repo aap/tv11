@@ -43,6 +43,7 @@ struct KD11B
 	Bus *bus;
 	byte psw;
 	int traps;
+	int be;
 	int running;
 	int waiting;
 
