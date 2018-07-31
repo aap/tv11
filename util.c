@@ -61,12 +61,17 @@ serve(int port, void (*handlecon)(int, void*), void *arg)
 	int sockfd, confd;
 	socklen_t len;
 	struct sockaddr_in server, client;
+	int x;
 
 	sockfd = socket(AF_INET, SOCK_STREAM, 0);
 	if(sockfd < 0){
 		perror("error: socket");
 		return;
 	}
+
+	x = 1;
+	setsockopt (sockfd, SOL_SOCKET, SO_REUSEADDR, (void *)&x, sizeof x);
+
 	memset(&server, 0, sizeof(server));
 	server.sin_family = AF_INET;
 	server.sin_addr.s_addr = INADDR_ANY;
