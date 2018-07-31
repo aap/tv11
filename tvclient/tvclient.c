@@ -224,6 +224,7 @@ enum {
 };
 
 int curmod;
+int MOD_CAPSLOCK = MOD_SLOCK; //User option.
 
 void
 keydown(SDL_Keysym keysym)
@@ -239,7 +240,7 @@ keydown(SDL_Keysym keysym)
 	case SDL_SCANCODE_RCTRL: curmod |= MOD_RCTRL; break;
 	case SDL_SCANCODE_LALT: curmod |= MOD_LMETA; break;
 	case SDL_SCANCODE_RALT: curmod |= MOD_RMETA; break;
-	case SDL_SCANCODE_CAPSLOCK: curmod |= MOD_SLOCK; break;
+	case SDL_SCANCODE_CAPSLOCK: curmod |= MOD_CAPSLOCK; break;
 	}
 
 	key = scancodemap[keysym.scancode];
@@ -266,7 +267,7 @@ keyup(SDL_Keysym keysym)
 	case SDL_SCANCODE_RCTRL: curmod &= ~MOD_RCTRL; break;
 	case SDL_SCANCODE_LALT: curmod &= ~MOD_LMETA; break;
 	case SDL_SCANCODE_RALT: curmod &= ~MOD_RMETA; break;
-	case SDL_SCANCODE_CAPSLOCK: curmod &= ~MOD_SLOCK; break;
+	case SDL_SCANCODE_CAPSLOCK: curmod &= ~MOD_CAPSLOCK; break;
 	}
 //	printf("up: %d %o %o\n", keysym.scancode, scancodemap[keysym.scancode], curmod);
 }
@@ -430,6 +431,9 @@ main(int argc, char *argv[])
 	ARGBEGIN{
 	case 'p':
 		port = atoi(EARGF(usage()));
+		break;
+	case 'C':
+		MOD_CAPSLOCK = MOD_LCTRL;
 		break;
 	case '2':
 		scale++;
