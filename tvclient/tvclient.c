@@ -142,7 +142,7 @@ initkeymap(void)
 		scancodemap[i] = -1;
 
 	scancodemap[SDL_SCANCODE_F12] = 000;	/* BREAK */
-	scancodemap[SDL_SCANCODE_F1] = 001;	/* ESC */
+	scancodemap[SDL_SCANCODE_F2] = 001;	/* ESC */
 	scancodemap[SDL_SCANCODE_1] = 002;
 	scancodemap[SDL_SCANCODE_2] = 003;
 	scancodemap[SDL_SCANCODE_3] = 004;
@@ -157,7 +157,7 @@ initkeymap(void)
 	scancodemap[SDL_SCANCODE_EQUALS] = 015;	/* @ ` */
 	scancodemap[SDL_SCANCODE_GRAVE] = 016;	/* ^ ~ */
 	scancodemap[SDL_SCANCODE_BACKSPACE] = 017;
-	scancodemap[SDL_SCANCODE_F2] = 0020;	/* CALL */
+	scancodemap[SDL_SCANCODE_F1] = 0020;	/* CALL */
 
 	scancodemap[SDL_SCANCODE_F3] = 0021;	/* CLEAR */
 	scancodemap[SDL_SCANCODE_TAB] = 022;
