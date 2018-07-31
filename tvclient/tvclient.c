@@ -39,6 +39,7 @@ uint32 bg = 0x00000000;
 uint32 drawev;
 int fd;
 int stride;
+int backspace = 017; /* Knight key code for BS. */
 
 uint8 largebuf[64*1024];
 
@@ -156,7 +157,7 @@ initkeymap(void)
 	scancodemap[SDL_SCANCODE_MINUS] = 014;	/* - = */
 	scancodemap[SDL_SCANCODE_EQUALS] = 015;	/* @ ` */
 	scancodemap[SDL_SCANCODE_GRAVE] = 016;	/* ^ ~ */
-	scancodemap[SDL_SCANCODE_BACKSPACE] = 017;
+	scancodemap[SDL_SCANCODE_BACKSPACE] = backspace;
 	scancodemap[SDL_SCANCODE_F1] = 0020;	/* CALL */
 
 	scancodemap[SDL_SCANCODE_F3] = 0021;	/* CLEAR */
@@ -431,6 +432,10 @@ main(int argc, char *argv[])
 	ARGBEGIN{
 	case 'p':
 		port = atoi(EARGF(usage()));
+		break;
+	case 'B':
+		/* Backspace is Rubout. */
+		backspace = 046;
 		break;
 	case 'C':
 		MOD_CAPSLOCK = MOD_LCTRL;
