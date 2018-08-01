@@ -4,6 +4,7 @@
 typedef struct Ten11 Ten11;
 struct Ten11
 {
+	KD11B *cpu;	/* for clock interrupt kludge */
 	int fd;
 };
 
@@ -80,6 +81,10 @@ svc_ten11(Bus *bus, void *dev)
 	uint32 a;
 	word d;
 
+	/* KLUDGE */
+//	if((ten11->cpu->psw>>5 & 7) > 0)
+//		return 0;
+
 	if(ten11->fd < 0)
 		return 0;
 
@@ -105,7 +110,9 @@ svc_ten11(Bus *bus, void *dev)
 		bus->addr = a;
 		bus->data = d;
 		if(a&1) goto be;
+if(a < 0760000)
 		if(dato_bus(bus)) goto be;
+//else
 //fprintf(stderr, "TEN11 write: %06o %06o\n", bus->addr, bus->data);
 		buf[0] = 1;
 		buf[1] = 3;
@@ -312,6 +319,7 @@ main(int argc, char *argv[])
 
 	printf("connecting to PDP-10\n");
 //	ten11.fd = -1;
+	ten11.cpu = &cpu;
 	ten11.fd = dial(host, port);
 	if(ten11.fd < 0){
 		printf("can't connect to PDP-10\n");

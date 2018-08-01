@@ -33,13 +33,14 @@ int scale = 1;
 
 SDL_Renderer *renderer;
 SDL_Texture *screentex;
-uint32 fb[WIDTH*HEIGHT*4];
+uint32 fb[WIDTH*HEIGHT];
+uint32 *finalfb;
 uint32 fg = 0x00FF0000;
 uint32 bg = 0x00000000;
-uint32 drawev;
 int fd;
-int stride;
 int backspace = 017; /* Knight key code for BS. */
+uint32 timeout;
+int updated;
 
 uint8 largebuf[64*1024];
 
@@ -123,9 +124,39 @@ win:
 }
 
 void
+updatefb(void)
+{
+	int x, y;
+	int i;
+	uint32 c;
+	int stride;
+	uint32 *src, *dst;
+
+	if(scale == 1){
+		memcpy(finalfb, fb, WIDTH*HEIGHT*sizeof(uint32));
+		return;
+	}
+	stride = WIDTH*scale;
+	src = fb;
+	dst = finalfb;
+	for(y = 0; y < HEIGHT; y++){
+		for(x = 0; x < WIDTH; x++)
+			for(i = 0; i < scale; i++)
+				dst[x*scale + i] = src[x];
+		for(i = 1; i < scale; i++){
+			memcpy(dst+stride, dst, stride*sizeof(uint32));
+			dst += stride;
+		}
+		src += WIDTH;
+		dst += stride;
+	}
+}
+
+void
 draw(void)
 {
-	SDL_UpdateTexture(screentex, nil, fb, WIDTH*scale*sizeof(uint32));
+	updatefb();
+	SDL_UpdateTexture(screentex, nil, finalfb, WIDTH*scale*sizeof(uint32));
 	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
 	SDL_RenderClear(renderer);
 	SDL_RenderCopy(renderer, screentex, nil, nil);
@@ -289,46 +320,37 @@ dumpbuf(uint8 *b, int n)
 void
 unpackfb(uint8 *src, int x, int y, int w, int h)
 {
-	int i, j, k;
+	int i, j;
 	uint32 *dst;
 	uint16 wd;
 
-	dst = &fb[(y*stride + x)*scale];
+	dst = &fb[y*WIDTH + x];
 	for(i = 0; i < h; i++){
 		for(j = 0; j < w; j++){
 			if(j%16 == 0){
 				wd = b2w(src);
 				src += 2;
 			}
-			for(k = 0; k < scale; k++){
-				dst[j*scale+k] = wd&0100000 ? fg : bg;
-				dst[j*scale+k*stride] = wd&0100000 ? fg : bg;
-				dst[j*scale+k*stride+k] = wd&0100000 ? fg : bg;
-			}
+			dst[j] = wd&0100000 ? fg : bg;
 			wd <<= 1;
 		}
-		dst += stride*scale;
+		dst += WIDTH;
 	}
+	updated = 1;
 //	printf("update: %d %d %d %d\n", x, y, w, h);
 }
 
 void
 getupdate(uint16 addr, uint16 wd)
 {
-	int x, y;
-	int j, k;
+	int j;
 	uint32 *dst;
-	x = (addr*16) % WIDTH;
-	y = (addr*16) / WIDTH;
-	dst = &fb[(y*stride + x)*scale];
+	dst = &fb[addr*16];
 	for(j = 0; j < 16; j++){
-		for(k = 0; k < scale; k++){
-			dst[j*scale+k] = wd&0100000 ? fg : bg;
-			dst[j*scale+k*stride] = wd&0100000 ? fg : bg;
-			dst[j*scale+k*stride+k] = wd&0100000 ? fg : bg;
-		}
+		dst[j] = wd&0100000 ? fg : bg;
 		wd <<= 1;
 	}
+	updated = 1;
 }
 
 void
@@ -370,10 +392,6 @@ readthread(void *arg)
 	uint8 *b;
 	uint8 type;
 	int x, y, w, h;
-	SDL_Event ev;
-
-	memset(&ev, 0, sizeof(SDL_Event));
-	ev.type = drawev;
 
 	while(read(fd, &len, 2) == 2){
 		len = b2w((uint8*)&len);
@@ -387,14 +405,11 @@ readthread(void *arg)
 			w = b2w(b+4);
 			h = b2w(b+6);
 			b += 8;
-			//printf("getfb: %d %d %d %d\n", x, y, w, h);
 			unpackfb(b, x*16, y, w*16, h);
-		//	SDL_PushEvent(&ev);
 			break;
 
 		case MSG_WD:
 			getupdate(b2w(b), b2w(b+2));
-		//	SDL_PushEvent(&ev);
 			break;
 
 		case MSG_CLOSE:
@@ -409,22 +424,41 @@ readthread(void *arg)
 	exit(0);
 }
 
+void*
+timethread(void *arg)
+{
+	(void)arg;
+	SDL_Event ev;
+	memset(&ev, 0, sizeof(ev));
+	ev.type = timeout;
+	struct timespec slp = { 0, 30*1000*1000 };
+	for(;;){
+		nanosleep(&slp, nil);
+		SDL_PushEvent(&ev);
+	}
+}
+
 void
 usage(void)
 {
-	fprintf(stderr, "usage: %s [-p port] server\n", argv0);
-	fprintf(stderr, "\tserver: host running tv11\n");
+	fprintf(stderr, "usage: %s [-c bg,fg] [-2] [-B] [-C] [-p port] server\n", argv0);
+	fprintf(stderr, "\t-c: set background and foreground color (in hex)\n");
+	fprintf(stderr, "\t-2: scale 2x\n");
+	fprintf(stderr, "\t-B: map backspace to rubout\n");
+	fprintf(stderr, "\t-C: map shift lock to control\n");
 	fprintf(stderr, "\t-p: tv11 port; default 11100\n");
+	fprintf(stderr, "\tserver: host running tv11\n");
 	exit(0);
 }
 
 int
 main(int argc, char *argv[])
 {
-	pthread_t thread;
+	pthread_t th1, th2;
 	SDL_Window *window;
 	SDL_Event event;
 	int running;
+	char *p;
 	int port;
 	char *host;
 
@@ -432,6 +466,13 @@ main(int argc, char *argv[])
 	ARGBEGIN{
 	case 'p':
 		port = atoi(EARGF(usage()));
+		break;
+	case 'c':
+		p = EARGF(usage());
+		bg = strtol(p, &p, 16)<<8;
+		if(*p++ != ',') usage();
+		fg = strtol(p, &p, 16)<<8;
+		if(*p++ != '\0') usage();
 		break;
 	case 'B':
 		/* Backspace is Rubout. */
@@ -450,9 +491,6 @@ main(int argc, char *argv[])
 
 	host = argv[0];
 
-	stride = WIDTH*scale;
-
-
 	initkeymap();
 
 	fd = dial(host, port);
@@ -463,22 +501,24 @@ main(int argc, char *argv[])
 	screentex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888,
 			SDL_TEXTUREACCESS_STREAMING, WIDTH*scale, HEIGHT*scale);
 
-	drawev = SDL_RegisterEvents(1);
+	timeout = SDL_RegisterEvents(1);
 
 	int i;
-	for(i = 0; i < WIDTH*scale*HEIGHT*scale; i++)
+	for(i = 0; i < WIDTH*HEIGHT; i++)
 		fb[i] = bg;
+
+	finalfb = malloc(WIDTH*scale*HEIGHT*scale*sizeof(uint32));
 
 	getdpykbd();
 	getfb();
 
-	pthread_create(&thread, nil, readthread, nil);
+	pthread_create(&th1, nil, readthread, nil);
+	pthread_create(&th2, nil, timethread, nil);
 
 	running = 1;
 	while(running){
-//		if(SDL_WaitEvent(&event) < 0)
-//			panic("SDL_PullEvent() error: %s\n", SDL_GetError());
-		if(SDL_PollEvent(&event)){
+		if(SDL_WaitEvent(&event) < 0)
+			panic("SDL_PullEvent() error: %s\n", SDL_GetError());
 		switch(event.type){
 		case SDL_MOUSEBUTTONDOWN:
 			break;
@@ -496,14 +536,15 @@ main(int argc, char *argv[])
 		case SDL_QUIT:
 			running = 0;
 			break;
-
 		default:
-			/* catch user event */
-			continue;
+			/* user event every 30ms */
+			if(updated){
+				updated = 0;
+				draw();
+			}
 			break;
 		}
-		}
-		draw();
+
 	}
 	return 0;
 }
