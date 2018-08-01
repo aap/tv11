@@ -30,6 +30,7 @@ typedef uint8_t uint8;
 char *argv0;
 
 int scale = 1;
+int ctrlslock = 0;
 
 SDL_Renderer *renderer;
 SDL_Texture *screentex;
@@ -256,13 +257,14 @@ enum {
 };
 
 int curmod;
-int MOD_CAPSLOCK = MOD_SLOCK; //User option.
 
 void
 keydown(SDL_Keysym keysym)
 {
 	int key;
 
+	if(ctrlslock && keysym.scancode == SDL_SCANCODE_CAPSLOCK)
+		keysym.scancode = SDL_SCANCODE_LCTRL;
 	switch(keysym.scancode){
 	case SDL_SCANCODE_LSHIFT: curmod |= MOD_LSHIFT; break;
 	case SDL_SCANCODE_RSHIFT: curmod |= MOD_RSHIFT; break;
@@ -272,7 +274,6 @@ keydown(SDL_Keysym keysym)
 	case SDL_SCANCODE_RCTRL: curmod |= MOD_RCTRL; break;
 	case SDL_SCANCODE_LALT: curmod |= MOD_LMETA; break;
 	case SDL_SCANCODE_RALT: curmod |= MOD_RMETA; break;
-	case SDL_SCANCODE_CAPSLOCK: curmod |= MOD_CAPSLOCK; break;
 	}
 
 	key = scancodemap[keysym.scancode];
@@ -290,6 +291,8 @@ keydown(SDL_Keysym keysym)
 void
 keyup(SDL_Keysym keysym)
 {
+	if(ctrlslock && keysym.scancode == SDL_SCANCODE_CAPSLOCK)
+		keysym.scancode = SDL_SCANCODE_LCTRL;
 	switch(keysym.scancode){
 	case SDL_SCANCODE_LSHIFT: curmod &= ~MOD_LSHIFT; break;
 	case SDL_SCANCODE_RSHIFT: curmod &= ~MOD_RSHIFT; break;
@@ -299,7 +302,7 @@ keyup(SDL_Keysym keysym)
 	case SDL_SCANCODE_RCTRL: curmod &= ~MOD_RCTRL; break;
 	case SDL_SCANCODE_LALT: curmod &= ~MOD_LMETA; break;
 	case SDL_SCANCODE_RALT: curmod &= ~MOD_RMETA; break;
-	case SDL_SCANCODE_CAPSLOCK: curmod &= ~MOD_CAPSLOCK; break;
+	case SDL_SCANCODE_CAPSLOCK: curmod ^= MOD_SLOCK; break;
 	}
 //	printf("up: %d %o %o\n", keysym.scancode, scancodemap[keysym.scancode], curmod);
 }
@@ -479,7 +482,7 @@ main(int argc, char *argv[])
 		backspace = 046;
 		break;
 	case 'C':
-		MOD_CAPSLOCK = MOD_LCTRL;
+		ctrlslock++;
 		break;
 	case '2':
 		scale++;
