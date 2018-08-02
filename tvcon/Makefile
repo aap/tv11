@@ -1,2 +1,4 @@
+CFLAGS=`sdl2-config --cflags`
+LDLIBS=`sdl2-config --libs` -lpthread
 tvcon: tvcon.c
-	cc -o $@ `sdl2-config --libs --cflags` $<
+	cc $(CFLAGS) -o $@ $< $(LDLIBS)
