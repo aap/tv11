@@ -1,5 +1,5 @@
 CFLAGS=-Wall -Wextra -Wno-parentheses
-LDFLAGS=-lpthread
+LDLIBS=-lpthread
 tv11: tv11.o cpu.o mem.o eae.o util.o tv.o
 tv11.o: tv11.h
 cpu.o: tv11.h
