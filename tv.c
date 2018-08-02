@@ -104,6 +104,7 @@ static struct {
 };
 
 void sendfb(TV *tv, int osw);
+void sendbuf(TV *tv, FBuffer *buffer);
 void sendupdate(TV *tv, FBuffer *buffer, uint16 addr);
 
 void
@@ -178,8 +179,9 @@ dato_tv(Bus *bus, void *dev)
 			return 0;
 		/* In Buffer */
 		if(bus->addr == CSA){
-			curbuf->csa = bus->data;
+			curbuf->csa = alu(*creg>>8, curbuf->csa, d);
 			curbuf->mask = curbuf->csa&010000 ? ~0 : 0;
+			sendbuf(tv, curbuf);
 		}else{
 			waddr -= TVLO>>1;
 			w = curbuf->fb[waddr];
@@ -240,15 +242,13 @@ datob_tv(Bus *bus, void *dev)
 			return 0;
 		/* In Buffer */
 		if((bus->addr&~1) == CSA){
-			if(bus->addr&1)
-				SETMASK(curbuf->csa, bus->data, ~0377);
-			else
-				SETMASK(curbuf->csa, bus->data, 0377);
+			w = alu(*creg>>8, curbuf->csa, d);
+			SETMASK(curbuf->csa, w, m);
 			curbuf->mask = curbuf->csa&010000 ? ~0 : 0;
+			sendbuf(tv, curbuf);
 		}else{
 			waddr -= TVLO>>1;
-			w = curbuf->fb[waddr];
-			w = alu(*creg>>8, w, d);
+			w = alu(*creg>>8, curbuf->fb[waddr], d);
 			SETMASK(curbuf->fb[waddr], w, m);
 			sendupdate(tv, curbuf, waddr);
 		}
@@ -420,7 +420,7 @@ packfb(TV *tv, uint8 *dst, int osw, int x, int y, int w, int h)
 	 * External video input is not supported here of course. */
 	n1 = dpymap[0][tv->vswsect[0][osw]];
 	n2 = dpymap[1][tv->vswsect[1][osw]];
-printf("inbuf: %d %d\n", n1, n2);
+//printf("inbuf: %d %d\n", n1, n2);
 	src1 = n1 < 0 ? nullfb : &tv->buffers[n1].fb[stride*y + x];
 	src2 = n2 < 0 ? nullfb : &tv->buffers[n2].fb[stride*y + x];
 	bw1 = n1 < 0 ? 0 : tv->buffers[n1].mask;
@@ -452,6 +452,15 @@ sendfb(TV *tv, int osw)
 	b += 8;
 	packfb(tv, b, con->dpy, 0, 0, WIDTH/16, HEIGHT);
 	write(con->fd, largebuf, 3+8+WIDTH*HEIGHT/8);
+}
+
+void
+sendbuf(TV *tv, FBuffer *buffer)
+{
+	int i;
+	for(i = 0; i < buffer->nosw; i++)
+		if(buffer->osw[i] >= 0)
+			sendfb(tv, buffer->osw[i]);
 }
 
 /* Send a single word update to all displays */
@@ -579,7 +588,7 @@ svc_tv(Bus *bus, void *dev)
 	pthread_cond_signal(&kbcond);
 	pthread_mutex_unlock(&kblock);
 
-	printf("writing key: %o %o\n", key, kbd);
+//printf("writing key: %o %o\n", key, kbd);
 	bus->addr = tv->kma_hi | tv->kma_lo;
 	bus->data = key;
 	dato_bus(bus);
@@ -728,7 +737,7 @@ handletv_thread(void *arg)
 			/* TODO: make this check more sound */
 			if(fds[i].fd == con->fd){
 				/* All good, talk to the display */
-				printf("handling con %d\n", conmap[i]);
+//				printf("handling con %d\n", conmap[i]);
 				handlemsg(tv, con);
 			}
 			UNGUARD;
