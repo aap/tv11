@@ -13,7 +13,6 @@ enum {
 	TVLO = 060000,
 	CSA = 0157776,
 	CREG = 0764044,
-	UNK = 0764046,
 	KMS = 0764050,
 	KMA = 0764052,
 	VSW = 0764060,
@@ -38,13 +37,6 @@ enum {
 	ALU_IOR,
 	ALU_SET
 };
-
-/* Used:
- * ANDC
- * XOR
- * IOR
- * SET
- */
 
 enum {
 	WIDTH = 576,
@@ -112,7 +104,7 @@ static struct {
 };
 
 void sendfb(TV *tv, int osw);
-void sendupdate(TV *tv, uint16 addr);
+void sendupdate(TV *tv, FBuffer *buffer, uint16 addr);
 
 void
 vswinfo(TV *tv)
@@ -144,58 +136,64 @@ updatevsw(TV *tv)
 	}
 }
 
+static word
+alu(int op, word a, word b)
+{
+	switch(op){
+	case ALU_SETC:	a = ~b; break;
+	case ALU_NOR:	a = ~(a|b); break;
+	case ALU_ANDC:	a = a&~b; break;
+	case ALU_SETZ:	a = 0; break;
+	case ALU_NAND:	a = ~(a&b); break;
+	case ALU_COMP:	a = ~a; break;
+	case ALU_XOR:	a ^= b; break;
+	case ALU_ANDCSD: a = ~a&b; break;
+	case ALU_ORCSD:	a = a|~b; break;
+	case ALU_EQV:	a = ~(a^b); break;
+	case ALU_SAME:	break;
+	case ALU_AND:	a &= b; break;
+	case ALU_ORSCD:	a = ~a|b; break;
+	case ALU_SETO:	a = ~0; break;
+	case ALU_IOR:	a |= b; break;
+	case ALU_SET:	a = b; break;
+	default: a = 0;	/* can't happen */
+	}
+	return a;
+}
+
 int
 dato_tv(Bus *bus, void *dev)
 {
 	TV *tv = dev;
 	int waddr = bus->addr>>1;
 	word w, d;
+	word *creg;
+	FBuffer *curbuf;
 
+	creg = tv->ten11->cycle ? &tv->creg10 : &tv->creg11;
+	curbuf = (*creg & 0377) < NUMFBUFFERS ? &tv->buffers[*creg & 0377] : nil;
 	d = bus->data;
 	if(bus->addr >= TVLO && bus->addr < 0160000){
-		if(tv->curbuf == nil)
-			return 1;
+		if(curbuf == nil)
+			return 0;
 		/* In Buffer */
 		if(bus->addr == CSA){
-			tv->curbuf->csa = bus->data;
-			tv->curbuf->mask = tv->curbuf->csa&010000 ? ~0 : 0;
+			curbuf->csa = bus->data;
+			curbuf->mask = curbuf->csa&010000 ? ~0 : 0;
 		}else{
 			waddr -= TVLO>>1;
-			w = tv->curbuf->fb[waddr];
-			switch(tv->creg>>8){
-			case ALU_SETC:	w = ~d; break;
-			case ALU_NOR:	w = ~(w|d); break;
-			case ALU_ANDC:	w = w&~d; break;
-			case ALU_SETZ:	w = 0; break;
-			case ALU_NAND:	w = ~(w&d); break;
-			case ALU_COMP:	w = ~w; break;
-			case ALU_XOR:	w ^= d; break;
-			case ALU_ANDCSD: w = ~w&d; break;
-			case ALU_ORCSD:	w = ~w|d; break;
-			case ALU_EQV:	w = ~(w^d); break;
-			case ALU_SAME:	break;
-			case ALU_AND:	w &= d; break;
-			case ALU_ORSCD:	w = w|~d; break;
-			case ALU_SETO:	w = ~0; break;
-			case ALU_IOR:	w |= d; break;
-			case ALU_SET:	w = d; break;
-			default: w = 0;	/* can't happen */
-			}
-			tv->curbuf->fb[waddr] = w;
-			sendupdate(tv, waddr);
+			w = curbuf->fb[waddr];
+			curbuf->fb[waddr] = alu(*creg>>8, w, d);
+			sendupdate(tv, curbuf, waddr);
 		}
 		return 0;
 	}
 	switch(bus->addr){
 	case CREG:
-		tv->creg = d;
-		if((tv->creg & 0377) < NUMFBUFFERS)
-			tv->curbuf = &tv->buffers[tv->creg & 0377];
-		else
-			tv->curbuf = nil;
+		*creg = d;
 		return 0;
-	case UNK:
-		/* We don't know what this does */
+	case CREG+2:
+		/* unused, written only as side effect */
 		return 0;
 	case KMS:
 		tv->kms = d & ~037;
@@ -230,53 +228,38 @@ datob_tv(Bus *bus, void *dev)
 	TV *tv = dev;
 	int waddr = bus->addr>>1;
 	word w, d, m;
+	word *creg;
+	FBuffer *curbuf;
+
+	creg = tv->ten11->cycle ? &tv->creg10 : &tv->creg11;
+	curbuf = (*creg & 0377 < NUMFBUFFERS) ? &tv->buffers[*creg & 0377] : nil;
 	d = bus->data;
 	m = bus->addr&1 ? ~0377 : 0377;
 	if(bus->addr >= TVLO && bus->addr < 0160000){
+		if(curbuf == nil)
+			return 0;
 		/* In Buffer */
 		if((bus->addr&~1) == CSA){
 			if(bus->addr&1)
-				SETMASK(tv->curbuf->csa, bus->data, ~0377);
+				SETMASK(curbuf->csa, bus->data, ~0377);
 			else
-				SETMASK(tv->curbuf->csa, bus->data, 0377);
-			tv->curbuf->mask = tv->curbuf->csa&010000 ? ~0 : 0;
+				SETMASK(curbuf->csa, bus->data, 0377);
+			curbuf->mask = curbuf->csa&010000 ? ~0 : 0;
 		}else{
 			waddr -= TVLO>>1;
-			w = tv->curbuf->fb[waddr];
-			switch(tv->creg>>8){
-			case ALU_SETC:	w = ~d; break;
-			case ALU_NOR:	w = ~(w|d); break;
-			case ALU_ANDC:	w = w&~d; break;
-			case ALU_SETZ:	w = 0; break;
-			case ALU_NAND:	w = ~(w&d); break;
-			case ALU_COMP:	w = ~w; break;
-			case ALU_XOR:	w ^= d; break;
-			case ALU_ANDCSD: w = ~w&d; break;
-			case ALU_ORCSD:	w = ~w|d; break;
-			case ALU_EQV:	w = ~(w^d); break;
-			case ALU_SAME:	break;
-			case ALU_AND:	w &= d; break;
-			case ALU_ORSCD:	w = w|~d; break;
-			case ALU_SETO:	w = ~0; break;
-			case ALU_IOR:	w |= d; break;
-			case ALU_SET:	w = d; break;
-			default: w = 0;	/* can't happen */
-			}
-			SETMASK(tv->curbuf->fb[waddr], w, m);
-			sendupdate(tv, waddr);
+			w = curbuf->fb[waddr];
+			w = alu(*creg>>8, w, d);
+			SETMASK(curbuf->fb[waddr], w, m);
+			sendupdate(tv, curbuf, waddr);
 		}
 		return 0;
 	}
 	switch(bus->addr&~1){
 	case CREG:
-		SETMASK(tv->creg, d, m);
-		if((tv->creg & 0377) < NUMFBUFFERS)
-			tv->curbuf = &tv->buffers[tv->creg & 0377];
-		else
-			tv->curbuf = nil;
+		SETMASK(*creg, d, m);
 		return 0;
-	case UNK:
-		/* We don't know what this does */
+	case CREG+2:
+		/* unused, written only as side effect */
 		return 0;
 	case KMS:
 		/* Don't know if this is allowed,
@@ -299,23 +282,30 @@ int
 dati_tv(Bus *bus, void *dev)
 {
 	TV *tv = dev;
+	word *creg;
+	FBuffer *curbuf;
+
+	creg = tv->ten11->cycle ? &tv->creg10 : &tv->creg11;
+	curbuf = (*creg & 0377) < NUMFBUFFERS ? &tv->buffers[*creg & 0377] : nil;
 	int waddr = bus->addr>>1;
 	if(bus->addr >= TVLO && bus->addr < 0160000){
+		if(curbuf == nil)
+			return 0;
 		/* In Buffer */
 		if((bus->addr&~1) == CSA)
-			bus->data = tv->curbuf->csa;
+			bus->data = curbuf->csa;
 		else{
 			waddr -= TVLO>>1;
-			bus->data = tv->curbuf->fb[waddr];
+			bus->data = curbuf->fb[waddr];
 		}
 		return 0;
 	}
 	switch(bus->addr){
 	case CREG:
-		bus->data = tv->creg;
+		bus->data = *creg;
 		return 0;
-	case UNK:
-		/* We don't know what this does */
+	case CREG+2:
+		/* unused, read only as side effect */
 		bus->data = 0;
 		return 0;
 	case KMS:
@@ -338,8 +328,8 @@ reset_tv(void *dev)
 {
 	TV *tv = dev;
 	memset(tv->buffers, 0, sizeof(tv->buffers));
-	tv->curbuf = &tv->buffers[tv->creg & 0377];
-	tv->creg = 0;
+	tv->creg11 = 0;
+	tv->creg10 = 0;
 	memset(tv->vswsect, 0, sizeof(tv->vswsect));
 
 	tv->kms = 0;
@@ -350,11 +340,6 @@ reset_tv(void *dev)
 	tv->km_key = 0;
 
 	updatevsw(tv);
-
-	int i, j;
-	for(i = 0; i < NUMFBUFFERS; i++)
-		for(j = 0; j < WIDTH*HEIGHT/16; j++)
-			tv->buffers[i].fb[j] = i+1; //j ^ i;
 }
 
 void
@@ -471,7 +456,7 @@ sendfb(TV *tv, int osw)
 
 /* Send a single word update to all displays */
 void
-sendupdate(TV *tv, uint16 addr)
+sendupdate(TV *tv, FBuffer *buffer, uint16 addr)
 {
 	uint8 buf[7];
 	int i;
@@ -486,8 +471,8 @@ sendupdate(TV *tv, uint16 addr)
 //	printf("sending update of %o: %o\n", addr, tv->curbuf->fb[addr]);
 
 	/* Again do the mixing thing for no reason */
-	for(i = 0; i < tv->curbuf->nosw; i++){
-		osw = tv->curbuf->osw[i];
+	for(i = 0; i < buffer->nosw; i++){
+		osw = buffer->osw[i];
 		if(osw < 0 || tv->omap[osw] < 0)
 			continue;
 		n1 = dpymap[0][tv->vswsect[0][osw]];
@@ -497,7 +482,6 @@ sendupdate(TV *tv, uint16 addr)
 		bw1 = n1 < 0 ? 0 : tv->buffers[n1].mask;
 		bw2 = n2 < 0 ? 0 : tv->buffers[n2].mask;
 		w2b(buf+5, w1^bw1 | w2^bw2);
-//printf("updating %o %o %o\n", tv->cons[tv->omap[osw]].fd, addr, w1^bw1 | w2^bw2);
 		write(tv->cons[tv->omap[osw]].fd, buf, 7);
 	}
 }
@@ -785,6 +769,7 @@ servetv(TV *tv, int port)
 	pthread_create(&th, nil, servetv_thread, sa);
 }
 
+#if 0
 void
 tvtest(TV *tv, Bus *bus)
 {
@@ -821,3 +806,4 @@ tvtest(TV *tv, Bus *bus)
 	bus->data = ~0;
 	dato_bus(bus);
 }
+#endif

@@ -126,6 +126,15 @@ int datob_ke11(Bus *bus, void *dev);
 void reset_ke11(void *dev);
 
 
+/* The 10-11 interface */
+typedef struct Ten11 Ten11;
+struct Ten11
+{
+	int cycle;
+	int fd;
+};
+
+
 /* Some of these numbers are also hardcoded! */
 enum {
 	NUMFBUFFERS = 16,
@@ -161,9 +170,13 @@ struct FBuffer
 typedef struct TV TV;
 struct TV
 {
+	/* need this to tell 11 from 10 cycles */
+	Ten11 *ten11;
+
 	FBuffer buffers[NUMFBUFFERS];	/* 256 is the theoretical maximum */
-	FBuffer *curbuf;
-	word creg;
+	/* two different variables for 10 and 11 */
+	word creg11;
+	word creg10;
 	
 	/* Two sections.
 	 * Each has 32 outputs that can have one of 16 inputs.

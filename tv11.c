@@ -1,14 +1,6 @@
 #include "tv11.h"
 #include "args.h"
 
-typedef struct Ten11 Ten11;
-struct Ten11
-{
-	KD11B *cpu;	/* for clock interrupt kludge */
-	int fd;
-};
-
-
 // in words
 #define MEMSIZE (12*1024)
 
@@ -105,14 +97,13 @@ svc_ten11(Bus *bus, void *dev)
 	a = buf[1] | buf[2]<<8 | buf[3]<<16;
 	d = buf[4] | buf[5]<<8;
 
+	ten11->cycle = 1;
 	switch(buf[0]){
 	case 1:		/* write */
 		bus->addr = a;
 		bus->data = d;
 		if(a&1) goto be;
-if(a < 0760000)
 		if(dato_bus(bus)) goto be;
-//else
 //fprintf(stderr, "TEN11 write: %06o %06o\n", bus->addr, bus->data);
 		buf[0] = 1;
 		buf[1] = 3;
@@ -133,12 +124,14 @@ if(a < 0760000)
 		fprintf(stderr, "unknown ten11 message type %d\n", buf[0]);
 		break;
 	}
+	ten11->cycle = 0;
 	return 0;
 be:
 fprintf(stderr, "TEN11 bus error %06o\n", bus->addr);
 	buf[0] = 1;
 	buf[1] = 4;
 	write(ten11->fd, buf, 2);
+	ten11->cycle = 0;
 	return 0;
 }
 
@@ -319,7 +312,7 @@ main(int argc, char *argv[])
 
 	printf("connecting to PDP-10\n");
 //	ten11.fd = -1;
-	ten11.cpu = &cpu;
+	ten11.cycle = 0;
 	ten11.fd = dial(host, port);
 	if(ten11.fd < 0){
 		printf("can't connect to PDP-10\n");
@@ -343,6 +336,7 @@ main(int argc, char *argv[])
 	//eaetest(&ke11);
 
 	inittv(&tv);
+	tv.ten11 = &ten11;
 
 	reset(&cpu);
 

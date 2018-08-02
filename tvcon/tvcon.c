@@ -528,6 +528,7 @@ main(int argc, char *argv[])
 
 		case SDL_WINDOWEVENT:
 			winevent(event.window);
+			draw();
 			break;
 
 		case SDL_KEYDOWN:
