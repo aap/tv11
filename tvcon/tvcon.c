@@ -164,6 +164,38 @@ draw(void)
 	SDL_RenderPresent(renderer);
 }
 
+int
+writen (int fd, void *data, int n)
+{
+	int m;
+
+	while (n > 0) {
+		m = write (fd, data, n);
+		if (m == -1)
+			return -1;
+		data += m;
+		n -= m;
+	}
+
+	return 0;
+}
+
+int
+readn (int fd, void *data, int n)
+{
+	int m;
+
+	while (n > 0) {
+		m = read (fd, data, n);
+		if (m == -1)
+			return -1;
+		data += m;
+		n -= m;
+	}
+
+	return 0;
+}
+
 /* Map SDL scancodes to Knight keyboard codes as best we can */
 int scancodemap[SDL_NUM_SCANCODES];
 
@@ -393,7 +425,7 @@ textinput(char *text)
 
 	msgheader(largebuf, MSG_KEYDN, 3);
 	w2b(largebuf+3, key);
-	write(fd, largebuf, 5);
+	writen(fd, largebuf, 5);
 }
 
 /* Return true if this key will come as a TextInput event.*/
@@ -461,7 +493,7 @@ keydown(SDL_Keysym keysym)
 
 	msgheader(largebuf, MSG_KEYDN, 3);
 	w2b(largebuf+3, key);
-	write(fd, largebuf, 5);
+	writen(fd, largebuf, 5);
 //	printf("down: %o\n", key);
 }
 
@@ -551,14 +583,14 @@ getfb(void)
 	w2b(b+2, y);
 	w2b(b+4, w);
 	w2b(b+6, h);
-	write(fd, largebuf, 11);
+	writen(fd, largebuf, 11);
 }
 
 void
 getdpykbd(void)
 {
 	uint8 buf[2];
-	if(read(fd, buf, 2) != 2){
+	if(readn(fd, buf, 2) == -1){
 		fprintf(stderr, "protocol botch\n");
 		return;
 	}
@@ -573,10 +605,10 @@ readthread(void *arg)
 	uint8 type;
 	int x, y, w, h;
 
-	while(read(fd, &len, 2) == 2){
+	while(readn(fd, &len, 2) != -1){
 		len = b2w((uint8*)&len);
 		b = largebuf;
-		read(fd, b, len);
+		readn(fd, b, len);
 		type = *b++;
 		switch(type){
 		case MSG_FB:
