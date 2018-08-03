@@ -256,7 +256,179 @@ enum {
 	MOD_SLOCK = 040000,
 };
 
+#define MOD_SHIFT (MOD_LSHIFT | MOD_RSHIFT)
+#define MOD_CTRL (MOD_LCTRL | MOD_RCTRL)
+
+/* Map key symbols to Knight keyboard codes as best we can */
+int symbolmap[128];
+
+void
+initsymbolmap(void)
+{
+	int i;
+	for(i = 0; i < 128; i++)
+		symbolmap[i] = -1;
+
+	symbolmap[' '] = 077;
+	symbolmap['!'] = 002 | MOD_LSHIFT;
+	symbolmap['"'] = 003 | MOD_LSHIFT;
+	symbolmap['#'] = 004 | MOD_LSHIFT;
+	symbolmap['%'] = 006 | MOD_LSHIFT;
+	symbolmap['$'] = 005 | MOD_LSHIFT;
+	symbolmap['&'] = 007 | MOD_LSHIFT;
+	symbolmap['\''] = 010 | MOD_LSHIFT;
+	symbolmap['('] = 011 | MOD_LSHIFT;
+	symbolmap[')'] = 012 | MOD_LSHIFT;
+	symbolmap['*'] = 061 | MOD_LSHIFT;
+	symbolmap['+'] = 060 | MOD_LSHIFT;
+	symbolmap[','] = 074;
+	symbolmap['-'] = 014;
+	symbolmap['.'] = 075;
+	symbolmap['/'] = 076;
+	symbolmap['0'] = 013;
+	symbolmap['1'] = 002;
+	symbolmap['2'] = 003;
+	symbolmap['3'] = 004;
+	symbolmap['4'] = 005;
+	symbolmap['5'] = 006;
+	symbolmap['6'] = 007;
+	symbolmap['7'] = 010;
+	symbolmap['8'] = 011;
+	symbolmap['9'] = 012;
+	symbolmap[':'] = 061;
+	symbolmap[';'] = 060;
+	symbolmap['<'] = 074 | MOD_LSHIFT;
+	symbolmap['='] = 014 | MOD_LSHIFT;
+	symbolmap['>'] = 075 | MOD_LSHIFT;
+	symbolmap['?'] = 076 | MOD_LSHIFT;
+	symbolmap['@'] = 015;
+	symbolmap['A'] = 047 | MOD_LSHIFT;
+	symbolmap['B'] = 071 | MOD_LSHIFT;
+	symbolmap['C'] = 067 | MOD_LSHIFT;
+	symbolmap['D'] = 051 | MOD_LSHIFT;
+	symbolmap['E'] = 026 | MOD_LSHIFT;
+	symbolmap['F'] = 052 | MOD_LSHIFT;
+	symbolmap['G'] = 053 | MOD_LSHIFT;
+	symbolmap['H'] = 054 | MOD_LSHIFT;
+	symbolmap['I'] = 033 | MOD_LSHIFT;
+	symbolmap['J'] = 055 | MOD_LSHIFT;
+	symbolmap['K'] = 056 | MOD_LSHIFT;
+	symbolmap['L'] = 057 | MOD_LSHIFT;
+	symbolmap['M'] = 073 | MOD_LSHIFT;
+	symbolmap['N'] = 072 | MOD_LSHIFT;
+	symbolmap['O'] = 034 | MOD_LSHIFT;
+	symbolmap['P'] = 035 | MOD_LSHIFT;
+	symbolmap['Q'] = 024 | MOD_LSHIFT;
+	symbolmap['R'] = 027 | MOD_LSHIFT;
+	symbolmap['S'] = 050 | MOD_LSHIFT;
+	symbolmap['T'] = 030 | MOD_LSHIFT;
+	symbolmap['U'] = 032 | MOD_LSHIFT;
+	symbolmap['V'] = 070 | MOD_LSHIFT;
+	symbolmap['W'] = 025 | MOD_LSHIFT;
+	symbolmap['X'] = 066 | MOD_LSHIFT;
+	symbolmap['Y'] = 031 | MOD_LSHIFT;
+	symbolmap['Z'] = 065 | MOD_LSHIFT;
+	symbolmap['['] = 036;
+	symbolmap['\\'] = 040;
+	symbolmap[']'] = 037;
+	symbolmap['^'] = 016;
+	symbolmap['_'] = 013 | MOD_LSHIFT;
+	symbolmap['`'] = 015 | MOD_LSHIFT;
+	symbolmap['a'] = 047;
+	symbolmap['b'] = 071;
+	symbolmap['c'] = 067;
+	symbolmap['d'] = 051;
+	symbolmap['e'] = 026;
+	symbolmap['f'] = 052;
+	symbolmap['g'] = 053;
+	symbolmap['h'] = 054;
+	symbolmap['i'] = 033;
+	symbolmap['j'] = 055;
+	symbolmap['k'] = 056;
+	symbolmap['l'] = 057;
+	symbolmap['m'] = 073;
+	symbolmap['n'] = 072;
+	symbolmap['o'] = 034;
+	symbolmap['p'] = 035;
+	symbolmap['q'] = 024;
+	symbolmap['r'] = 027;
+	symbolmap['s'] = 050;
+	symbolmap['t'] = 030;
+	symbolmap['u'] = 032;
+	symbolmap['v'] = 070;
+	symbolmap['w'] = 025;
+	symbolmap['x'] = 066;
+	symbolmap['y'] = 031;
+	symbolmap['z'] = 065;
+	symbolmap['{'] = 036 | MOD_LSHIFT;
+	symbolmap['|'] = 040 | MOD_LSHIFT;
+	symbolmap['}'] = 037 | MOD_LSHIFT;
+	symbolmap['~'] = 016 | MOD_LSHIFT;
+}
+
+int
+texty_ignore (int key)
+{
+	return 0;
+}
+
+int (*texty)(int) = texty_ignore;
+
 int curmod;
+
+void
+textinput(char *text)
+{
+	int key;
+
+	if (text[0] >= 128)
+		return;
+
+	key = symbolmap[text[0]];
+	if(key < 0)
+		return;
+
+	// Add in modifiers except shift, which comes from the table.
+	key |= curmod & ~MOD_SHIFT;
+
+	msgheader(largebuf, MSG_KEYDN, 3);
+	w2b(largebuf+3, key);
+	write(fd, largebuf, 5);
+}
+
+/* Return true if this key will come as a TextInput event.*/
+int
+texty_symbol (int key)
+{
+	// Control characters don't generate TextInput.
+	if (curmod & MOD_CTRL)
+        	return 0;
+
+	// Nor do these function keys.
+	switch (key) {
+	case SDL_SCANCODE_F1:
+	case SDL_SCANCODE_F2:
+	case SDL_SCANCODE_F3:
+	case SDL_SCANCODE_F4:
+	case SDL_SCANCODE_F5:
+	case SDL_SCANCODE_F6:
+	case SDL_SCANCODE_F7:
+	case SDL_SCANCODE_F8:
+	case SDL_SCANCODE_F9:
+	case SDL_SCANCODE_F10:
+	case SDL_SCANCODE_F11:
+	case SDL_SCANCODE_F12:
+	case SDL_SCANCODE_TAB:
+	case SDL_SCANCODE_ESCAPE:
+	case SDL_SCANCODE_DELETE:
+	case SDL_SCANCODE_RETURN:
+	case SDL_SCANCODE_BACKSPACE:
+        	return 0;
+	}
+
+	// Plain letters, numbers, and symbols do.
+	return 1;
+}
 
 void
 keydown(SDL_Keysym keysym)
@@ -275,6 +447,11 @@ keydown(SDL_Keysym keysym)
 	case SDL_SCANCODE_LALT: curmod |= MOD_LMETA; break;
 	case SDL_SCANCODE_RALT: curmod |= MOD_RMETA; break;
 	}
+
+	// Some, but not all, keys come as both KeyboardEvent and
+	// TextInput.  Ignore the latter kind here.
+	if (texty (keysym.scancode))
+		return;
 
 	key = scancodemap[keysym.scancode];
 	if(key < 0)
@@ -449,6 +626,7 @@ usage(void)
 	fprintf(stderr, "\t-2: scale 2x\n");
 	fprintf(stderr, "\t-B: map backspace to rubout\n");
 	fprintf(stderr, "\t-C: map shift lock to control\n");
+	fprintf(stderr, "\t-S: map keys by according to symbols\n");
 	fprintf(stderr, "\t-p: tv11 port; default 11100\n");
 	fprintf(stderr, "\tserver: host running tv11\n");
 	exit(0);
@@ -464,6 +642,9 @@ main(int argc, char *argv[])
 	char *p;
 	int port;
 	char *host;
+
+	SDL_Init (SDL_INIT_EVERYTHING);
+	SDL_StopTextInput ();
 
 	port = 11100;
 	ARGBEGIN{
@@ -483,6 +664,11 @@ main(int argc, char *argv[])
 		break;
 	case 'C':
 		ctrlslock++;
+		break;
+	case 'S':
+		initsymbolmap();
+		texty = texty_symbol;
+		SDL_StartTextInput ();
 		break;
 	case '2':
 		scale++;
@@ -531,6 +717,9 @@ main(int argc, char *argv[])
 			draw();
 			break;
 
+		case SDL_TEXTINPUT:
+			textinput(event.text.text);
+			break;
 		case SDL_KEYDOWN:
 			keydown(event.key.keysym);
 			break;
