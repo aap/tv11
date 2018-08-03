@@ -36,7 +36,7 @@ SDL_Renderer *renderer;
 SDL_Texture *screentex;
 uint32 fb[WIDTH*HEIGHT];
 uint32 *finalfb;
-uint32 fg = 0x00FF0000;
+uint32 fg = 0x4AFF0000; // Phosphor P39, peak at 525nm.
 uint32 bg = 0x00000000;
 int fd;
 int backspace = 017; /* Knight key code for BS. */
