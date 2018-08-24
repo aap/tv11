@@ -165,13 +165,13 @@ draw(void)
 }
 
 int
-writen (int fd, void *data, int n)
+writen(int fd, void *data, int n)
 {
 	int m;
 
-	while (n > 0) {
-		m = write (fd, data, n);
-		if (m == -1)
+	while(n > 0){
+		m = write(fd, data, n);
+		if(m == -1)
 			return -1;
 		data += m;
 		n -= m;
@@ -181,13 +181,13 @@ writen (int fd, void *data, int n)
 }
 
 int
-readn (int fd, void *data, int n)
+readn(int fd, void *data, int n)
 {
 	int m;
 
-	while (n > 0) {
-		m = read (fd, data, n);
-		if (m == -1)
+	while(n > 0){
+		m = read(fd, data, n);
+		if(m == -1)
 			return -1;
 		data += m;
 		n -= m;
@@ -399,7 +399,7 @@ initsymbolmap(void)
 }
 
 int
-texty_ignore (int key)
+texty_ignore(int key)
 {
 	return 0;
 }
@@ -430,14 +430,14 @@ textinput(char *text)
 
 /* Return true if this key will come as a TextInput event.*/
 int
-texty_symbol (int key)
+texty_symbol(int key)
 {
 	// Control characters don't generate TextInput.
-	if (curmod & MOD_CTRL)
+	if(curmod & MOD_CTRL)
         	return 0;
 
 	// Nor do these function keys.
-	switch (key) {
+	switch(key){
 	case SDL_SCANCODE_F1:
 	case SDL_SCANCODE_F2:
 	case SDL_SCANCODE_F3:
@@ -481,8 +481,8 @@ keydown(SDL_Keysym keysym)
 	}
 
 	// Some, but not all, keys come as both KeyboardEvent and
-	// TextInput.  Ignore the latter kind here.
-	if (texty (keysym.scancode))
+	// TextInput. Ignore the latter kind here.
+	if(texty(keysym.scancode))
 		return;
 
 	key = scancodemap[keysym.scancode];
@@ -675,8 +675,8 @@ main(int argc, char *argv[])
 	int port;
 	char *host;
 
-	SDL_Init (SDL_INIT_EVERYTHING);
-	SDL_StopTextInput ();
+	SDL_Init(SDL_INIT_EVERYTHING);
+	SDL_StopTextInput();
 
 	port = 11100;
 	ARGBEGIN{
