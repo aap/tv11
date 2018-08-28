@@ -68,7 +68,7 @@ int
 svc_ten11(Bus *bus, void *dev)
 {
 	Ten11 *ten11 = dev;
-	uint8 buf[6], len;
+	uint8 buf[8], len[2];
 	int n;
 	uint32 a;
 	word d;
@@ -83,19 +83,23 @@ svc_ten11(Bus *bus, void *dev)
 	memset(buf, 0, sizeof(buf));
 	if(!hasinput(ten11->fd))
 		return 0;
-	n = read(ten11->fd, &len, 1);
-	if(n != 1){
+	n = read(ten11->fd, len, 2);
+	if(n != 2){
 		fprintf(stderr, "fd closed, exiting\n");
 		exit(0);
 	}
-	if(len > 6){
+	if(len[0] != 0){
 		fprintf(stderr, "unibus botch, exiting\n");
 		exit(0);
 	}
-	read(ten11->fd, buf, len);
+	if(len[1] > 6){
+		fprintf(stderr, "unibus botch, exiting\n");
+		exit(0);
+	}
+	read(ten11->fd, buf, len[1]);
 
-	a = buf[1] | buf[2]<<8 | buf[3]<<16;
-	d = buf[4] | buf[5]<<8;
+	a = buf[3] | buf[2]<<8 | buf[1]<<16;
+	d = buf[5] | buf[4]<<8;
 
 	ten11->cycle = 1;
 	switch(buf[0]){
@@ -105,20 +109,22 @@ svc_ten11(Bus *bus, void *dev)
 		if(a&1) goto be;
 		if(dato_bus(bus)) goto be;
 //fprintf(stderr, "TEN11 write: %06o %06o\n", bus->addr, bus->data);
-		buf[0] = 1;
-		buf[1] = 3;
-		write(ten11->fd, buf, 2);
+		buf[0] = 0;
+		buf[1] = 1;
+		buf[2] = 3;
+		write(ten11->fd, buf, 3);
 		break;
 	case 2:		/* read */
 		bus->addr = a;
 		if(a&1) goto be;
 		if(dati_bus(bus)) goto be;
 //fprintf(stderr, "TEN11 read: %06o %06o\n", bus->addr, bus->data);
-		buf[0] = 3;
+		buf[0] = 0;
 		buf[1] = 3;
-		buf[2] = bus->data;
+		buf[2] = 3;
 		buf[3] = bus->data>>8;
-		write(ten11->fd, buf, 4);
+		buf[4] = bus->data;
+		write(ten11->fd, buf, 5);
 		break;
 	default:
 		fprintf(stderr, "unknown ten11 message type %d\n", buf[0]);
@@ -128,9 +134,10 @@ svc_ten11(Bus *bus, void *dev)
 	return 0;
 be:
 fprintf(stderr, "TEN11 bus error %06o\n", bus->addr);
-	buf[0] = 1;
-	buf[1] = 4;
-	write(ten11->fd, buf, 2);
+	buf[0] = 0;
+	buf[1] = 1;
+	buf[2] = 4;
+	write(ten11->fd, buf, 3);
 	ten11->cycle = 0;
 	return 0;
 }
@@ -245,26 +252,8 @@ Busdev ten11busdev = { nil, &ten11, dati_null, dato_null, datob_null, svc_ten11,
 void
 setunibus(uint8 n)
 {
-	uint8 len;
-	uint8 buf[3];
-	buf[0] = 2;
-	buf[1] = 0;
-	buf[2] = n;
-	write(ten11.fd, buf, 3);
-
-	if(read(ten11.fd, &len, 1) != 1)
-		goto err;
-	if(len != 1) goto err;
-	if(read(ten11.fd, buf, len) != len) goto err;
-	if(buf[0] != 3){
-		fprintf(stderr, "couldn't attach as unibus %d, exiting\n", n);
-		exit(0);
-	}
 	printf("unibus %d OK\n", n);
 	return;
-err:
-	fprintf(stderr, "unibus protocol botch, exiting\n");
-	exit(0);
 }
 
 char *argv0;
