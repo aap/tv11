@@ -65,6 +65,22 @@ sxt(byte b)
 }
 
 int
+readn(int fd, void *data, int n)
+{
+	int m;
+
+	while(n > 0){
+		m = read(fd, data, n);
+		if(m == -1)
+			return -1;
+		data += m;
+		n -= m;
+	}
+
+	return 0;
+}
+
+int
 svc_ten11(Bus *bus, void *dev)
 {
 	Ten11 *ten11 = dev;
@@ -96,7 +112,7 @@ svc_ten11(Bus *bus, void *dev)
 		fprintf(stderr, "unibus botch, exiting\n");
 		exit(0);
 	}
-	read(ten11->fd, buf, len[1]);
+	readn(ten11->fd, buf, len[1]);
 
 	a = buf[3] | buf[2]<<8 | buf[1]<<16;
 	d = buf[5] | buf[4]<<8;
