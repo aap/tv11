@@ -7,12 +7,23 @@
 
 #include <unistd.h>
 #include <sys/types.h>
+#ifdef WIN32
+#undef _WIN32_WINNT
+#define _WIN32_WINNT 0x0501
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <time.h>
+typedef DWORD pthread_t;
+#define THREAD_RETURN DWORD WINAPI
+#else
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <netdb.h>
-
 #include <pthread.h>
+#include <netdb.h>
+#define THREAD_RETURN void *
+#endif
+
 #include <SDL.h>
 
 #include "../args.h"
@@ -288,6 +299,7 @@ enum {
 	MOD_SLOCK = 040000,
 };
 
+#undef MOD_SHIFT
 #define MOD_SHIFT (MOD_LSHIFT | MOD_RSHIFT)
 #define MOD_CTRL (MOD_LCTRL | MOD_RCTRL)
 
@@ -597,7 +609,7 @@ getdpykbd(void)
 	printf("%o %o\n", buf[0], buf[1]);
 }
 
-void*
+THREAD_RETURN
 readthread(void *arg)
 {
 	uint16 len;
@@ -636,7 +648,7 @@ readthread(void *arg)
 	exit(0);
 }
 
-void*
+THREAD_RETURN
 timethread(void *arg)
 {
 	(void)arg;
@@ -733,8 +745,14 @@ main(int argc, char *argv[])
 	getdpykbd();
 	getfb();
 
+#ifdef WIN32
+	SECURITY_ATTRIBUTES attr;
+	CreateThread(&attr, 0, readthread, nil, 0, &th1);
+	CreateThread(&attr, 0, timethread, nil, 0, &th2);
+#else
 	pthread_create(&th1, nil, readthread, nil);
 	pthread_create(&th2, nil, timethread, nil);
+#endif
 
 	running = 1;
 	while(running){
