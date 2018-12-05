@@ -130,7 +130,11 @@ dial(char *host, int port)
 			continue;
 		if(connect(sockfd, rp->ai_addr, rp->ai_addrlen) >= 0)
 			goto win;
+#ifdef WIN32
+		closesocket(sockfd);
+#else
 		close(sockfd);
+#endif
 	}
 	freeaddrinfo(result);
 	perror("error");
@@ -187,7 +191,11 @@ writen(int fd, void *data, int n)
 	int m;
 
 	while(n > 0){
+#ifdef WIN32
+		m = send(fd, data, n, 0);
+#else
 		m = write(fd, data, n);
+#endif
 		if(m == -1)
 			return -1;
 		data += m;
@@ -203,7 +211,11 @@ readn(int fd, void *data, int n)
 	int m;
 
 	while(n > 0){
+#ifdef WIN32
+		m = recv(fd, data, n, 0);
+#else
 		m = read(fd, data, n);
+#endif
 		if(m == -1)
 			return -1;
 		data += m;
@@ -643,7 +655,11 @@ readthread(void *arg)
 			break;
 
 		case MSG_CLOSE:
+#ifdef WIN32
+			closesocket(fd);
+#else
 			close(fd);
+#endif
 			exit(0);
 
 		default:
