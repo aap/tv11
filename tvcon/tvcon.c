@@ -107,14 +107,20 @@ dial(char *host, int port)
 	char portstr[32];
 	int sockfd;
 	struct addrinfo *result, *rp, hints;
+	int r;
 
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
 
 	snprintf(portstr, 32, "%d", port);
-	if(getaddrinfo(host, portstr, &hints, &result)){
+	r = getaddrinfo(host, portstr, &hints, &result);
+	if(r){
+#ifdef WIN32
+		fprintf(stderr, "error: getaddrinfo: %s\n", gai_strerror (r));
+#else
 		perror("error: getaddrinfo");
+#endif
 		return -1;
 	}
 
@@ -686,6 +692,11 @@ main(int argc, char *argv[])
 	char *p;
 	int port;
 	char *host;
+
+#ifdef WIN32
+	WSADATA data;
+	WSAStartup(MAKEWORD(2,2), &data);
+#endif
 
 	SDL_Init(SDL_INIT_EVERYTHING);
 	SDL_StopTextInput();
