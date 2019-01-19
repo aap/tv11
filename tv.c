@@ -172,7 +172,7 @@ dato_tv(Bus *bus, void *dev)
 	FBuffer *curbuf;
 
 	creg = tv->ten11->cycle ? &tv->creg10 : &tv->creg11;
-	curbuf = (*creg & 0377) < NUMFBUFFERS ? &tv->buffers[*creg & 0377] : nil;
+	curbuf = (*creg & BUFMASK) < NUMFBUFFERS ? &tv->buffers[*creg & BUFMASK] : nil;
 	d = bus->data;
 	if(bus->addr >= TVLO && bus->addr < 0160000){
 		if(curbuf == nil)
@@ -234,7 +234,7 @@ datob_tv(Bus *bus, void *dev)
 	FBuffer *curbuf;
 
 	creg = tv->ten11->cycle ? &tv->creg10 : &tv->creg11;
-	curbuf = (*creg & 0377 < NUMFBUFFERS) ? &tv->buffers[*creg & 0377] : nil;
+	curbuf = (*creg & BUFMASK < NUMFBUFFERS) ? &tv->buffers[*creg & BUFMASK] : nil;
 	d = bus->data;
 	m = bus->addr&1 ? ~0377 : 0377;
 	if(bus->addr >= TVLO && bus->addr < 0160000){
@@ -286,7 +286,7 @@ dati_tv(Bus *bus, void *dev)
 	FBuffer *curbuf;
 
 	creg = tv->ten11->cycle ? &tv->creg10 : &tv->creg11;
-	curbuf = (*creg & 0377) < NUMFBUFFERS ? &tv->buffers[*creg & 0377] : nil;
+	curbuf = (*creg & BUFMASK) < NUMFBUFFERS ? &tv->buffers[*creg & BUFMASK] : nil;
 	int waddr = bus->addr>>1;
 	if(bus->addr >= TVLO && bus->addr < 0160000){
 		if(curbuf == nil)

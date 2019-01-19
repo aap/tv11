@@ -144,6 +144,9 @@ enum {
 	NUMSECTIONS = 2,
 };
 
+/* Mask to get buffer number from CREG. */
+#define BUFMASK  037
+
 /* A remote TV connection */
 typedef struct TVcon TVcon;
 struct TVcon
