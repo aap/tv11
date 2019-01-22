@@ -32,6 +32,7 @@ char *argv0;
 int scale = 1;
 int ctrlslock = 0;
 
+SDL_Window *window;
 SDL_Renderer *renderer;
 SDL_Texture *screentex;
 uint32 fb[WIDTH*HEIGHT];
@@ -40,8 +41,9 @@ uint32 fg = 0x4AFF0000; // Phosphor P39, peak at 525nm.
 uint32 bg = 0x00000000;
 int fd;
 int backspace = 017; /* Knight key code for BS. */
-uint32 timeout;
-int updated;
+uint32 userevent;
+int updatebuf = 1;
+int updatescreen = 1;
 
 uint8 largebuf[64*1024];
 
@@ -156,12 +158,20 @@ updatefb(void)
 void
 draw(void)
 {
-	updatefb();
-	SDL_UpdateTexture(screentex, nil, finalfb, WIDTH*scale*sizeof(uint32));
-	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
-	SDL_RenderClear(renderer);
-	SDL_RenderCopy(renderer, screentex, nil, nil);
-	SDL_RenderPresent(renderer);
+	if(updatebuf){
+		updatebuf = 0;
+		updatefb();
+		SDL_UpdateTexture(screentex, nil,
+				finalfb, WIDTH*scale*sizeof(uint32));
+		updatescreen = 1;
+	}
+	if(updatescreen){
+		updatescreen = 0;
+		SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+		SDL_RenderClear(renderer);
+		SDL_RenderCopy(renderer, screentex, nil, nil);
+		SDL_RenderPresent(renderer);
+	}
 }
 
 int
@@ -480,6 +490,13 @@ keydown(SDL_Keysym keysym)
 	case SDL_SCANCODE_RALT: curmod |= MOD_RMETA; break;
 	}
 
+	if(keysym.scancode == SDL_SCANCODE_F11){
+		uint32 f = SDL_GetWindowFlags(window) &
+			SDL_WINDOW_FULLSCREEN_DESKTOP;
+		SDL_SetWindowFullscreen(window,
+			f ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);
+	}
+
 	// Some, but not all, keys come as both KeyboardEvent and
 	// TextInput. Ignore the latter kind here.
 	if(texty(keysym.scancode))
@@ -517,11 +534,6 @@ keyup(SDL_Keysym keysym)
 }
 
 void
-winevent(SDL_WindowEvent ev)
-{
-}
-
-void
 dumpbuf(uint8 *b, int n)
 {
 	while(n--)
@@ -548,7 +560,7 @@ unpackfb(uint8 *src, int x, int y, int w, int h)
 		}
 		dst += WIDTH;
 	}
-	updated = 1;
+	updatebuf = 1;
 //	printf("update: %d %d %d %d\n", x, y, w, h);
 }
 
@@ -562,7 +574,7 @@ getupdate(uint16 addr, uint16 wd)
 		dst[j] = wd&0100000 ? fg : bg;
 		wd <<= 1;
 	}
-	updated = 1;
+	updatebuf = 1;
 }
 
 void
@@ -604,6 +616,10 @@ readthread(void *arg)
 	uint8 *b;
 	uint8 type;
 	int x, y, w, h;
+	SDL_Event ev;
+
+	SDL_memset(&ev, 0, sizeof(SDL_Event));
+	ev.type = userevent;
 
 	while(readn(fd, &len, 2) != -1){
 		len = b2w((uint8*)&len);
@@ -618,10 +634,12 @@ readthread(void *arg)
 			h = b2w(b+6);
 			b += 8;
 			unpackfb(b, x*16, y, w*16, h);
+			SDL_PushEvent(&ev);
 			break;
 
 		case MSG_WD:
 			getupdate(b2w(b), b2w(b+2));
+			SDL_PushEvent(&ev);
 			break;
 
 		case MSG_CLOSE:
@@ -634,20 +652,6 @@ readthread(void *arg)
 	}
 	printf("connection hung up\n");
 	exit(0);
-}
-
-void*
-timethread(void *arg)
-{
-	(void)arg;
-	SDL_Event ev;
-	memset(&ev, 0, sizeof(ev));
-	ev.type = timeout;
-	struct timespec slp = { 0, 30*1000*1000 };
-	for(;;){
-		nanosleep(&slp, nil);
-		SDL_PushEvent(&ev);
-	}
 }
 
 void
@@ -668,7 +672,6 @@ int
 main(int argc, char *argv[])
 {
 	pthread_t th1, th2;
-	SDL_Window *window;
 	SDL_Event event;
 	int running;
 	char *p;
@@ -700,7 +703,7 @@ main(int argc, char *argv[])
 	case 'S':
 		initsymbolmap();
 		texty = texty_symbol;
-		SDL_StartTextInput ();
+		SDL_StartTextInput();
 		break;
 	case '2':
 		scale++;
@@ -722,7 +725,7 @@ main(int argc, char *argv[])
 	screentex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888,
 			SDL_TEXTUREACCESS_STREAMING, WIDTH*scale, HEIGHT*scale);
 
-	timeout = SDL_RegisterEvents(1);
+	userevent = SDL_RegisterEvents(1);
 
 	int i;
 	for(i = 0; i < WIDTH*HEIGHT; i++)
@@ -734,7 +737,6 @@ main(int argc, char *argv[])
 	getfb();
 
 	pthread_create(&th1, nil, readthread, nil);
-	pthread_create(&th2, nil, timethread, nil);
 
 	running = 1;
 	while(running){
@@ -742,11 +744,6 @@ main(int argc, char *argv[])
 			panic("SDL_PullEvent() error: %s\n", SDL_GetError());
 		switch(event.type){
 		case SDL_MOUSEBUTTONDOWN:
-			break;
-
-		case SDL_WINDOWEVENT:
-			winevent(event.window);
-			draw();
 			break;
 
 		case SDL_TEXTINPUT:
@@ -761,11 +758,25 @@ main(int argc, char *argv[])
 		case SDL_QUIT:
 			running = 0;
 			break;
-		default:
-			/* user event every 30ms */
-			if(updated){
-				updated = 0;
+
+		case SDL_USEREVENT:
+			/* framebuffer changed */
+			draw();
+			break;
+		case SDL_WINDOWEVENT:
+			switch(event.window.event){
+			case SDL_WINDOWEVENT_MOVED:
+			case SDL_WINDOWEVENT_ENTER:
+			case SDL_WINDOWEVENT_LEAVE:
+			case SDL_WINDOWEVENT_FOCUS_GAINED:
+			case SDL_WINDOWEVENT_FOCUS_LOST:
+			case SDL_WINDOWEVENT_TAKE_FOCUS:
+				break;
+			default:
+				/* redraw */
+				updatescreen = 1;
 				draw();
+				break;
 			}
 			break;
 		}
