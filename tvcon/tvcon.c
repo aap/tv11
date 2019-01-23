@@ -473,7 +473,7 @@ texty_symbol(int key)
 }
 
 void
-keydown(SDL_Keysym keysym)
+keydown(SDL_Keysym keysym, Uint8 repeat)
 {
 	int key;
 
@@ -490,7 +490,7 @@ keydown(SDL_Keysym keysym)
 	case SDL_SCANCODE_RALT: curmod |= MOD_RMETA; break;
 	}
 
-	if(keysym.scancode == SDL_SCANCODE_F11){
+	if(keysym.scancode == SDL_SCANCODE_F11 && !repeat){
 		uint32 f = SDL_GetWindowFlags(window) &
 			SDL_WINDOW_FULLSCREEN_DESKTOP;
 		SDL_SetWindowFullscreen(window,
@@ -750,7 +750,7 @@ main(int argc, char *argv[])
 			textinput(event.text.text);
 			break;
 		case SDL_KEYDOWN:
-			keydown(event.key.keysym);
+			keydown(event.key.keysym, event.key.repeat);
 			break;
 		case SDL_KEYUP:
 			keyup(event.key.keysym);
