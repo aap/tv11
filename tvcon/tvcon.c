@@ -770,7 +770,9 @@ main(int argc, char *argv[])
 			case SDL_WINDOWEVENT_LEAVE:
 			case SDL_WINDOWEVENT_FOCUS_GAINED:
 			case SDL_WINDOWEVENT_FOCUS_LOST:
+#ifdef SDL_WINDOWEVENT_TAKE_FOCUS
 			case SDL_WINDOWEVENT_TAKE_FOCUS:
+#endif
 				break;
 			default:
 				/* redraw */
