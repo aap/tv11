@@ -31,10 +31,12 @@ char *argv0;
 
 int scale = 1;
 int ctrlslock = 0;
+int modmap = 0;
 
 SDL_Window *window;
 SDL_Renderer *renderer;
 SDL_Texture *screentex;
+uint8 *keystate;
 uint32 fb[WIDTH*HEIGHT];
 uint32 *finalfb;
 uint32 fg = 0x4AFF0000; // Phosphor P39, peak at 525nm.
@@ -479,16 +481,30 @@ keydown(SDL_Keysym keysym, Uint8 repeat)
 
 	if(ctrlslock && keysym.scancode == SDL_SCANCODE_CAPSLOCK)
 		keysym.scancode = SDL_SCANCODE_LCTRL;
-	switch(keysym.scancode){
-	case SDL_SCANCODE_LSHIFT: curmod |= MOD_LSHIFT; break;
-	case SDL_SCANCODE_RSHIFT: curmod |= MOD_RSHIFT; break;
-	case SDL_SCANCODE_LGUI: curmod |= MOD_LTOP; break;
-	case SDL_SCANCODE_RGUI: curmod |= MOD_RTOP; break;
-	case SDL_SCANCODE_LCTRL: curmod |= MOD_LCTRL; break;
-	case SDL_SCANCODE_RCTRL: curmod |= MOD_RCTRL; break;
-	case SDL_SCANCODE_LALT: curmod |= MOD_LMETA; break;
-	case SDL_SCANCODE_RALT: curmod |= MOD_RMETA; break;
-	}
+
+	if(modmap){
+		/* Map RALT to TOP and ignore windows key */
+		switch(keysym.scancode){
+		case SDL_SCANCODE_LSHIFT: curmod |= MOD_LSHIFT; break;
+		case SDL_SCANCODE_RSHIFT: curmod |= MOD_RSHIFT; break;
+		case SDL_SCANCODE_LCTRL: curmod |= MOD_LCTRL; break;
+		case SDL_SCANCODE_RCTRL: curmod |= MOD_RCTRL; break;
+		case SDL_SCANCODE_LALT: curmod |= MOD_LMETA; break;
+		case SDL_SCANCODE_RALT: curmod |= MOD_RTOP; break;
+		}
+		if(keystate[SDL_SCANCODE_LGUI] || keystate[SDL_SCANCODE_RGUI])
+			return;
+	}else
+		switch(keysym.scancode){
+		case SDL_SCANCODE_LSHIFT: curmod |= MOD_LSHIFT; break;
+		case SDL_SCANCODE_RSHIFT: curmod |= MOD_RSHIFT; break;
+		case SDL_SCANCODE_LGUI: curmod |= MOD_LTOP; break;
+		case SDL_SCANCODE_RGUI: curmod |= MOD_RTOP; break;
+		case SDL_SCANCODE_LCTRL: curmod |= MOD_LCTRL; break;
+		case SDL_SCANCODE_RCTRL: curmod |= MOD_RCTRL; break;
+		case SDL_SCANCODE_LALT: curmod |= MOD_LMETA; break;
+		case SDL_SCANCODE_RALT: curmod |= MOD_RMETA; break;
+		}
 
 	if(keysym.scancode == SDL_SCANCODE_F11 && !repeat){
 		uint32 f = SDL_GetWindowFlags(window) &
@@ -519,17 +535,30 @@ keyup(SDL_Keysym keysym)
 {
 	if(ctrlslock && keysym.scancode == SDL_SCANCODE_CAPSLOCK)
 		keysym.scancode = SDL_SCANCODE_LCTRL;
-	switch(keysym.scancode){
-	case SDL_SCANCODE_LSHIFT: curmod &= ~MOD_LSHIFT; break;
-	case SDL_SCANCODE_RSHIFT: curmod &= ~MOD_RSHIFT; break;
-	case SDL_SCANCODE_LGUI: curmod &= ~MOD_LTOP; break;
-	case SDL_SCANCODE_RGUI: curmod &= ~MOD_RTOP; break;
-	case SDL_SCANCODE_LCTRL: curmod &= ~MOD_LCTRL; break;
-	case SDL_SCANCODE_RCTRL: curmod &= ~MOD_RCTRL; break;
-	case SDL_SCANCODE_LALT: curmod &= ~MOD_LMETA; break;
-	case SDL_SCANCODE_RALT: curmod &= ~MOD_RMETA; break;
-	case SDL_SCANCODE_CAPSLOCK: curmod ^= MOD_SLOCK; break;
-	}
+
+	if(modmap)
+		/* Map RALT to TOP and ignore windows key */
+		switch(keysym.scancode){
+		case SDL_SCANCODE_LSHIFT: curmod &= ~MOD_LSHIFT; break;
+		case SDL_SCANCODE_RSHIFT: curmod &= ~MOD_RSHIFT; break;
+		case SDL_SCANCODE_LCTRL: curmod &= ~MOD_LCTRL; break;
+		case SDL_SCANCODE_RCTRL: curmod &= ~MOD_RCTRL; break;
+		case SDL_SCANCODE_LALT: curmod &= ~MOD_LMETA; break;
+		case SDL_SCANCODE_RALT: curmod &= ~MOD_RTOP; break;
+		case SDL_SCANCODE_CAPSLOCK: curmod ^= MOD_SLOCK; break;
+		}
+	else
+		switch(keysym.scancode){
+		case SDL_SCANCODE_LSHIFT: curmod &= ~MOD_LSHIFT; break;
+		case SDL_SCANCODE_RSHIFT: curmod &= ~MOD_RSHIFT; break;
+		case SDL_SCANCODE_LGUI: curmod &= ~MOD_LTOP; break;
+		case SDL_SCANCODE_RGUI: curmod &= ~MOD_RTOP; break;
+		case SDL_SCANCODE_LCTRL: curmod &= ~MOD_LCTRL; break;
+		case SDL_SCANCODE_RCTRL: curmod &= ~MOD_RCTRL; break;
+		case SDL_SCANCODE_LALT: curmod &= ~MOD_LMETA; break;
+		case SDL_SCANCODE_RALT: curmod &= ~MOD_RMETA; break;
+		case SDL_SCANCODE_CAPSLOCK: curmod ^= MOD_SLOCK; break;
+		}
 //	printf("up: %d %o %o\n", keysym.scancode, scancodemap[keysym.scancode], curmod);
 }
 
@@ -663,6 +692,7 @@ usage(void)
 	fprintf(stderr, "\t-B: map backspace to rubout\n");
 	fprintf(stderr, "\t-C: map shift lock to control\n");
 	fprintf(stderr, "\t-S: map keys by according to symbols\n");
+	fprintf(stderr, "\t-M: map RALT to TOP and ignore windows keys\n");
 	fprintf(stderr, "\t-p: tv11 port; default 11100\n");
 	fprintf(stderr, "\tserver: host running tv11\n");
 	exit(0);
@@ -705,6 +735,9 @@ main(int argc, char *argv[])
 		texty = texty_symbol;
 		SDL_StartTextInput();
 		break;
+	case 'M':
+		modmap++;
+		break;
 	case '2':
 		scale++;
 		break;
@@ -724,6 +757,8 @@ main(int argc, char *argv[])
 
 	screentex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888,
 			SDL_TEXTUREACCESS_STREAMING, WIDTH*scale, HEIGHT*scale);
+
+	keystate = SDL_GetKeyboardState(nil);
 
 	userevent = SDL_RegisterEvents(1);
 
