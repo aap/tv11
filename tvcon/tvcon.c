@@ -163,8 +163,10 @@ draw(void)
 	if(updatebuf){
 		updatebuf = 0;
 		updatefb();
+//printf("updating tex %p %p. %x\n", screentex, finalfb, WIDTH*scale*sizeof(uint32));
 		SDL_UpdateTexture(screentex, nil,
 				finalfb, WIDTH*scale*sizeof(uint32));
+//printf("updated %p %p\n", screentex, finalfb);
 		updatescreen = 1;
 	}
 	if(updatescreen){
@@ -199,7 +201,7 @@ readn(int fd, void *data, int n)
 
 	while(n > 0){
 		m = read(fd, data, n);
-		if(m == -1)
+		if(m <= 0)
 			return -1;
 		data += m;
 		n -= m;
@@ -582,6 +584,8 @@ unpackfb(uint8 *src, int x, int y, int w, int h)
 		for(j = 0; j < w; j++){
 			if(j%16 == 0){
 				wd = b2w(src);
+if(keystate[SDL_SCANCODE_F5] && wd != 0)
+printf("%d,%d: %o\n", i, j, wd);
 				src += 2;
 			}
 			dst[j] = wd&0100000 ? fg : bg;
@@ -590,7 +594,6 @@ unpackfb(uint8 *src, int x, int y, int w, int h)
 		dst += WIDTH;
 	}
 	updatebuf = 1;
-//	printf("update: %d %d %d %d\n", x, y, w, h);
 }
 
 void

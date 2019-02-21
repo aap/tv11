@@ -10,7 +10,13 @@
  */
 
 enum {
+	WIDTH = 576,
+	HEIGHT = 454
+};
+
+enum {
 	TVLO = 060000,
+	TVHI = TVLO + WIDTH*HEIGHT/8,
 	CSA = 0157776,
 	CREG = 0764044,
 	KMS = 0764050,
@@ -36,11 +42,6 @@ enum {
 	ALU_SETO,
 	ALU_IOR,
 	ALU_SET
-};
-
-enum {
-	WIDTH = 576,
-	HEIGHT = 454
 };
 
 static pthread_mutex_t lock;
@@ -192,6 +193,7 @@ dato_tv(Bus *bus, void *dev)
 	}
 	switch(bus->addr){
 	case CREG:
+//printf("writing CREG %06o\n", d);
 		*creg = d;
 		return 0;
 	case CREG+2:
@@ -256,6 +258,7 @@ datob_tv(Bus *bus, void *dev)
 	}
 	switch(bus->addr&~1){
 	case CREG:
+//printf("writing CREGb %06o\n", d);
 		SETMASK(*creg, d, m);
 		return 0;
 	case CREG+2:
@@ -474,6 +477,10 @@ sendupdate(TV *tv, FBuffer *buffer, uint16 addr)
 	word w1, w2;
 	word bw1, bw2;
 
+	/* Don't tell screen to update anything not visible */
+	if(addr >= (TVHI-TVLO)/2)
+		return;
+
 	msgheader(buf, MSG_WD, 5);
 	w2b(buf+3, addr);
 
@@ -640,7 +647,7 @@ handlemsg(TV *tv, TVcon *con)
 	uint8 type;
 	int x, y, w, h;
 
-	if(read(con->fd, &len, 2) != 2){
+	if(readn(con->fd, &len, 2)){
 err:
 		closecon(tv, con);
 		return;
@@ -648,7 +655,7 @@ err:
 	len = b2w((uint8*)&len);
 
 	b = largebuf;
-	if(read(con->fd, b, len) != len)
+	if(readn(con->fd, b, len))
 		goto err;
 	type = *b++;
 	switch(type){

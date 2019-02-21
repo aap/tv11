@@ -22,6 +22,7 @@ typedef uint32_t uint32;
 //#define trace printf
 #define trace(...)
 
+int readn(int fd, void *data, int n);
 int hasinput(int fd);
 int dial(char *host, int port);
 void serve(int port, void (*handlecon)(int, void*), void *arg);

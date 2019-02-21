@@ -71,7 +71,7 @@ readn(int fd, void *data, int n)
 
 	while(n > 0){
 		m = read(fd, data, n);
-		if(m == -1)
+		if(m <= 0)
 			return -1;
 		data += m;
 		n -= m;
@@ -88,10 +88,6 @@ svc_ten11(Bus *bus, void *dev)
 	int n;
 	uint32 a;
 	word d;
-
-	/* KLUDGE */
-//	if((ten11->cpu->psw>>5 & 7) > 0)
-//		return 0;
 
 	if(ten11->fd < 0)
 		return 0;
