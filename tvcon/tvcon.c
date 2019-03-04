@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 
@@ -97,6 +98,7 @@ msgheader(uint8 *b, uint8 type, uint16 length)
 int
 dial(char *host, int port)
 {
+	int flag;
 	char portstr[32];
 	int sockfd;
 	struct addrinfo *result, *rp, hints;
@@ -124,6 +126,9 @@ dial(char *host, int port)
 	return -1;
 
 win:
+	flag = 1;
+	setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
+
 	freeaddrinfo(result);
 	return sockfd;
 }
@@ -163,10 +168,8 @@ draw(void)
 	if(updatebuf){
 		updatebuf = 0;
 		updatefb();
-//printf("updating tex %p %p. %x\n", screentex, finalfb, WIDTH*scale*sizeof(uint32));
 		SDL_UpdateTexture(screentex, nil,
 				finalfb, WIDTH*scale*sizeof(uint32));
-//printf("updated %p %p\n", screentex, finalfb);
 		updatescreen = 1;
 	}
 	if(updatescreen){
@@ -274,7 +277,7 @@ initkeymap(void)
 	scancodemap[SDL_SCANCODE_APOSTROPHE] = 061;	/* : * */
 	scancodemap[SDL_SCANCODE_RETURN] = 062;
 	// LINE FEED
-	// NEXT BACK
+	scancodemap[SDL_SCANCODE_F3] = 064;		/* next, back */
 
 	scancodemap[SDL_SCANCODE_Z] = 065;
 	scancodemap[SDL_SCANCODE_X] = 066;

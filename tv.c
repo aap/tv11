@@ -572,6 +572,7 @@ accepttv(int fd, void *arg)
 	con->dpy = dpykbdlist[c].dpy;
 	con->kbd = dpykbdlist[c].kbd;
 	con->fd = fd;
+	nodelay(con->fd);
 	tv->omap[con->dpy] = c;
 	UNGUARD;
 	setdpykbd(con->fd, con->dpy, con->kbd);
@@ -595,7 +596,6 @@ svc_tv(Bus *bus, void *dev)
 	pthread_cond_signal(&kbcond);
 	pthread_mutex_unlock(&kblock);
 
-//printf("writing key: %o %o\n", key, kbd);
 	bus->addr = tv->kma_hi | tv->kma_lo;
 	bus->data = key;
 	dato_bus(bus);
